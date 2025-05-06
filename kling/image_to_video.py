@@ -199,6 +199,18 @@ class KlingAI_ImageToVideo(ControlNode):
                 default_value=None, # Will be populated by an artifact
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Output URL of the generated video.",
+                ui_options={"placeholder_text": "", "is_full_width": True}
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="video_id",
+                output_type="str",
+                type="str",
+                default_value=None, # Changed from ""
+                allowed_modes={ParameterMode.OUTPUT},
+                tooltip="The Task ID of the generated video from Kling AI.",
+                ui_options={"placeholder_text": ""}
             )
         )
 
@@ -385,6 +397,9 @@ class KlingAI_ImageToVideo(ControlNode):
             response.raise_for_status() # Raise HTTPError for bad responses (4XX or 5XX)
             
             task_id = response.json()["data"]["task_id"]
+            # Publish the task_id to the video_id output parameter
+            self.publish_update_to_parameter("video_id", TextArtifact(task_id))
+
             poll_url = f"{BASE_URL}/{task_id}" # Assuming polling uses the same base and task_id pattern
             video_url = None
 

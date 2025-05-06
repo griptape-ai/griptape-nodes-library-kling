@@ -214,9 +214,21 @@ class KlingAI_TextToVideo(ControlNode):
             Parameter(
                 name="video_url",
                 output_type="VideoUrlArtifact",
-                default_value="",
+                default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Video URL",
+                ui_options={"placeholder_text": "", "is_full_width": True}
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="video_id",
+                output_type="str",
+                type="str",
+                default_value=None,
+                allowed_modes={ParameterMode.OUTPUT},
+                tooltip="The Task ID of the generated video from Kling AI.",
+                ui_options={"placeholder_text": "", "is_full_width": True}
             )
         )
 
@@ -297,6 +309,9 @@ class KlingAI_TextToVideo(ControlNode):
             response = requests.post(BASE_URL, headers=headers, json=payload)  # noqa: S113 Collin is this ok to ignore?
             response.raise_for_status()
             task_id = response.json()["data"]["task_id"]
+
+            # Publish the task_id to the video_id output parameter
+            self.publish_update_to_parameter("video_id", TextArtifact(task_id))
 
             poll_url = f"{BASE_URL}/{task_id}"
             video_url = None
