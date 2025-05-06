@@ -1,0 +1,43 @@
+{
+    "name": "Kling AI Library",
+    "library_schema_version": "0.1.0",
+    "metadata": {
+        "author": "Griptape",
+        "description": "Nodes for interacting with the Kling AI API",
+        "library_version": "0.1.0",
+        "engine_version": "0.1.0",
+        "tags": [
+            "Griptape",
+            "AI",
+            "Kling",
+            "Video Generation"
+        ],
+        "dependencies": {
+            "pip_dependencies": [
+                "pyjwt",
+                "requests"
+            ]
+        }
+    },
+    "categories": [
+        {
+            "Kling AI": {
+                "color": "border-green-500",
+                "title": "Kling AI",
+                "description": "Nodes using the Kling AI API.",
+                "icon": "Camera"
+            }
+        }
+    ],
+    "nodes": [
+        {
+            "class_name": "KlingAI_TextToVideo",
+            "file_path": "kling_video.py",
+            "metadata": {
+                "category": "Kling AI",
+                "description": "Generates a short video from a text prompt using the Kling AI text-to-video API.",
+                "display_name": "Kling Text-to-Video"
+            }
+        }
+    ]
+}

@@ -1,1 +1,4 @@
 .env
+.DS_Store
+.env.local
+/kling/__pycache__
