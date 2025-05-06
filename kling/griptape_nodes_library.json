@@ -42,11 +42,20 @@
     "nodes": [
         {
             "class_name": "KlingAI_TextToVideo",
-            "file_path": "kling_video.py",
+            "file_path": "text_to_video.py",
             "metadata": {
                 "category": "Kling AI",
                 "description": "Generates a short video from a text prompt using the Kling AI text-to-video API.",
                 "display_name": "Kling Text-to-Video"
+            }
+        },
+        {
+            "class_name": "KlingAI_ImageToVideo",
+            "file_path": "image_to_video.py",
+            "metadata": {
+                "category": "Kling AI",
+                "description": "Generates a video from an image using the Kling AI API.",
+                "display_name": "Kling Image-to-Video"
             }
         }
     ]

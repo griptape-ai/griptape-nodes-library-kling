@@ -319,4 +319,4 @@ class KlingAI_TextToVideo(ControlNode):
             logger.info(f"Video URL: {video_url}")
             return VideoUrlArtifact(video_url)
 
-        yield generate_video
+        yield generate_video 
