@@ -51,8 +51,7 @@ class KlingAI_TextToVideo(ControlNode):
         self.add_parameter(
             Parameter(
                 name="video_url",
-                type="str",
-                output_type="str",
+                output_type="VideoUrlArtifact",
                 default_value="",
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Video URL",
@@ -113,8 +112,8 @@ class KlingAI_TextToVideo(ControlNode):
                     logger.error(error_msg)
                     raise RuntimeError(error_msg)
 
-            self.publish_update_to_parameter("video_url", video_url)
+            self.publish_update_to_parameter("video_url", VideoUrlArtifact(video_url))
             logger.info(f"Video URL: {video_url}")
-            return TextArtifact(video_url)
+            return VideoUrlArtifact(video_url)
 
         yield generate_video
