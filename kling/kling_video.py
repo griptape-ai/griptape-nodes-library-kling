@@ -1,7 +1,7 @@
 import time
 import jwt
 import requests
-from griptape.artifacts import TextArtifact
+from griptape.artifacts import TextArtifact, UrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -11,6 +11,13 @@ SERVICE = "Kling"
 API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
 SECRET_KEY_ENV_VAR = "KLING_SECRET_KEY"  # noqa: S105
 BASE_URL = "https://api.klingai.com/v1/videos/text2video"
+
+class VideoUrlArtifact(UrlArtifact):
+    """
+    Artifact that contains a URL to a video.
+    """
+    def __init__(self, url: str):
+        super().__init__(url)
 
 
 def encode_jwt_token(ak: str, sk: str) -> str:
@@ -44,8 +51,7 @@ class KlingAI_TextToVideo(ControlNode):
         self.add_parameter(
             Parameter(
                 name="video_url",
-                type="str",
-                output_type="str",
+                output_type="VideoUrlArtifact",
                 default_value="",
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Video URL",
@@ -106,8 +112,8 @@ class KlingAI_TextToVideo(ControlNode):
                     logger.error(error_msg)
                     raise RuntimeError(error_msg)
 
-            self.publish_update_to_parameter("video_url", video_url)
+            self.publish_update_to_parameter("video_url", VideoUrlArtifact(video_url))
             logger.info(f"Video URL: {video_url}")
-            return TextArtifact(video_url)
+            return VideoUrlArtifact(video_url)
 
         yield generate_video
