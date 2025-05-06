@@ -1,6 +1,16 @@
 {
     "name": "Kling AI Library",
     "library_schema_version": "0.1.0",
+    "settings": [
+        {
+            "description": "Environment variables for storing secrets for new AI service's nodes",
+            "category": "nodes.Kling",
+            "contents": {
+                "KLING_ACCESS_KEY": "$KLING_ACCESS_KEY",
+                "KLING_SECRET_KEY": "$KLING_SECRET_KEY"
+            }
+        }
+    ],
     "metadata": {
         "author": "Griptape",
         "description": "Nodes for interacting with the Kling AI API",
