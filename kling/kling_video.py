@@ -1,7 +1,7 @@
 import time
 import jwt
 import requests
-from griptape.artifacts import TextArtifact
+from griptape.artifacts import TextArtifact, UrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -11,6 +11,13 @@ SERVICE = "Kling"
 API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
 SECRET_KEY_ENV_VAR = "KLING_SECRET_KEY"  # noqa: S105
 BASE_URL = "https://api.klingai.com/v1/videos/text2video"
+
+class VideoUrlArtifact(UrlArtifact):
+    """
+    Artifact that contains a URL to a video.
+    """
+    def __init__(self, url: str):
+        super().__init__(url)
 
 
 def encode_jwt_token(ak: str, sk: str) -> str:
