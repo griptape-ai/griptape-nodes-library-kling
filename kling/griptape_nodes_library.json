@@ -57,6 +57,15 @@
                 "description": "Generates a video from an image using the Kling AI API.",
                 "display_name": "Kling Image-to-Video"
             }
+        },
+        {
+            "class_name": "KlingAI_VideoExtension",
+            "file_path": "video_extension.py",
+            "metadata": {
+                "category": "Kling AI",
+                "description": "Extends an existing Kling AI video by 4-5 seconds.",
+                "display_name": "Kling Video Extension"
+            }
         }
     ]
 }

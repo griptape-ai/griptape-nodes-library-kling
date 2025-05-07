@@ -207,7 +207,7 @@ class KlingAI_ImageToVideo(ControlNode):
                 name="video_id",
                 output_type="str",
                 type="str",
-                default_value=None, # Changed from ""
+                default_value=None, 
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="The Task ID of the generated video from Kling AI.",
                 ui_options={"placeholder_text": ""}
@@ -397,11 +397,10 @@ class KlingAI_ImageToVideo(ControlNode):
             response.raise_for_status() # Raise HTTPError for bad responses (4XX or 5XX)
             
             task_id = response.json()["data"]["task_id"]
-            # Publish the task_id to the video_id output parameter
-            self.publish_update_to_parameter("video_id", TextArtifact(task_id))
 
             poll_url = f"{BASE_URL}/{task_id}" # Assuming polling uses the same base and task_id pattern
             video_url = None
+            actual_video_id = None # Initialize variable to store the actual video ID
 
             # Polling logic copied from KlingAI_TextToVideo
             max_retries = 60  # e.g., 60 retries * 5 seconds = 5 minutes timeout
@@ -418,6 +417,7 @@ class KlingAI_ImageToVideo(ControlNode):
 
                     if status == "succeed":
                         video_url = result["data"]["task_result"]["videos"][0]["url"]
+                        actual_video_id = result["data"]["task_result"]["videos"][0]["id"] # Extract the correct video ID
                         logger.info(f"Kling video generation succeeded: {video_url}")
                         break
                     if status == "failed":
@@ -436,6 +436,9 @@ class KlingAI_ImageToVideo(ControlNode):
 
             video_artifact = VideoUrlArtifact(url=video_url)
             self.publish_update_to_parameter("video_url", video_artifact)
+            if actual_video_id: # Publish the correct video ID if found
+                self.publish_update_to_parameter("video_id", actual_video_id)
+            logger.info(f"Video ID: {actual_video_id}") # Added logging for actual_video_id
             return video_artifact
 
         yield generate_video 

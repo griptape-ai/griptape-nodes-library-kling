@@ -310,11 +310,9 @@ class KlingAI_TextToVideo(ControlNode):
             response.raise_for_status()
             task_id = response.json()["data"]["task_id"]
 
-            # Publish the task_id to the video_id output parameter
-            self.publish_update_to_parameter("video_id", TextArtifact(task_id))
-
             poll_url = f"{BASE_URL}/{task_id}"
             video_url = None
+            actual_video_id = None # Initialize variable to store the actual video ID
 
             while True:
                 time.sleep(3)
@@ -324,6 +322,7 @@ class KlingAI_TextToVideo(ControlNode):
                 if status == "succeed":
                     logger.info(f"Video generation succeeded: {result['data']['task_result']['videos'][0]['url']}")
                     video_url = result["data"]["task_result"]["videos"][0]["url"]
+                    actual_video_id = result["data"]["task_result"]["videos"][0]["id"] # Extract the correct video ID
                     break
                 if status == "failed":
                     error_msg = f"Video generation failed: {result['data']['task_status_msg']}"
@@ -331,7 +330,10 @@ class KlingAI_TextToVideo(ControlNode):
                     raise RuntimeError(error_msg)
 
             self.publish_update_to_parameter("video_url", VideoUrlArtifact(video_url))
+            if actual_video_id: # Publish the correct video ID if found
+                self.publish_update_to_parameter("video_id", actual_video_id)
             logger.info(f"Video URL: {video_url}")
+            logger.info(f"Video ID: {actual_video_id}")
             return VideoUrlArtifact(video_url)
 
         yield generate_video 
