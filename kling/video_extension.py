@@ -41,7 +41,7 @@ class KlingAI_VideoExtension(ControlNode):
         self.description = "Extends an existing Kling AI video."
 
         # Core Input Group
-        with ParameterGroup(group_name="Core Input") as core_input_group:
+        with ParameterGroup(name="Core Input") as core_input_group:
             Parameter(
                 name="video_id",
                 input_types=["str"],
@@ -53,7 +53,7 @@ class KlingAI_VideoExtension(ControlNode):
         self.add_node_element(core_input_group)
 
         # Prompts Group
-        with ParameterGroup(group_name="Prompts") as prompts_group:
+        with ParameterGroup(name="Prompts") as prompts_group:
             Parameter(
                 name="prompt",
                 input_types=["str"],
@@ -76,7 +76,7 @@ class KlingAI_VideoExtension(ControlNode):
         self.add_node_element(prompts_group)
 
         # Generation Settings Group
-        with ParameterGroup(group_name="Generation Settings") as gen_settings_group:
+        with ParameterGroup(name="Generation Settings") as gen_settings_group:
             Parameter(
                 name="cfg_scale",
                 input_types=["float"],
@@ -89,7 +89,7 @@ class KlingAI_VideoExtension(ControlNode):
         self.add_node_element(gen_settings_group)
         
         # Callback Parameters Group
-        with ParameterGroup(group_name="Callback") as callback_group:
+        with ParameterGroup(name="Callback") as callback_group:
             Parameter(
                 name="callback_url",
                 input_types=["str"],

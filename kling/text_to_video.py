@@ -121,7 +121,7 @@ class KlingAI_TextToVideo(ControlNode):
             )
         )
         # Callback Parameters Group
-        with ParameterGroup(group_name="Callback") as callback_group:
+        with ParameterGroup(name="Callback") as callback_group:
             Parameter(
                 name="callback_url",
                 input_types=["str"],
@@ -143,7 +143,7 @@ class KlingAI_TextToVideo(ControlNode):
         callback_group.ui_options = {"hide": True} # Collapse by default
         self.add_node_element(callback_group)
         # Camera Control Parameters Group
-        with ParameterGroup(group_name="Camera Controls") as camera_group:
+        with ParameterGroup(name="Camera Controls") as camera_group:
             Parameter(
                 name="camera_control_type",
                 input_types=["str"],
