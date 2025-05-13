@@ -95,7 +95,7 @@ class KlingAI_ImageToVideo(ControlNode):
                 default_value="kling-v1",
                 tooltip="Model Name for generation.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["kling-v1", "kling-v1-5", "kling-v1-6"])},
+                traits={Options(choices=["kling-v1", "kling-v1-5", "kling-v1-6", "kling-v2-master"])},
             )
             Parameter(
                 name="cfg_scale",
