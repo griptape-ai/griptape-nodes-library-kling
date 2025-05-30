@@ -2,7 +2,7 @@
 
 This library provides Griptape Nodes for interacting with the Kling AI video generation services. You can use these nodes to generate videos from text prompts, images, or extend existing videos.
 
-**IMPORTANT:** To use these nodes, you will need API keys from Kling AI. Please visit the [Kling AI website](https://klingai.com) for more information on how to obtain your keys. You will need to set the `KLING_ACCESS_KEY` and `KLING_SECRET_KEY` environment variables, or configure them in your Griptape Nodes Engine settings for the "Kling" service.
+**IMPORTANT:** To use these nodes, you will need API keys from Kling AI. Please visit the [Kling AI website](https://klingai.com) for more information on how to obtain your keys.
 
 To configure your keys within the Griptape Nodes IDE:
 1. Open the **Settings** menu.
