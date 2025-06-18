@@ -1,6 +1,6 @@
 # Kling AI Video Nodes
 
-This library provides Griptape Nodes for interacting with the Kling AI video generation services. You can use these nodes to generate videos from text prompts, images, or extend existing videos.
+This library provides Griptape Nodes for interacting with the Kling AI video generation services. You can use these nodes to generate videos from text prompts, images, extend existing videos, or create lip-sync videos.
 
 **IMPORTANT:** To use these nodes, you will need API keys from Kling AI. Please visit the [Kling AI website](https://klingai.com) for more information on how to obtain your keys.
 
@@ -92,6 +92,27 @@ Extends an existing Kling AI video.
 | `extension_task_id`   | `str`              | **Output:** Task ID for the video extension job.                                                  | `None`        |
 
 *Note: `Core Input`, `Prompts`, `Generation Settings`, and `Callback` parameters are grouped and may be collapsed by default in the UI.*
+
+### Kling AI Lip Sync (`KlingAI_LipSync`)
+
+Creates lip-sync videos by synchronizing speech to video. Supports both Kling AI generated videos (via video ID) and uploaded videos (via video URL).
+
+| Parameter              | Type                         | Description                                                                                          | Default Value   |
+|------------------------|------------------------------|------------------------------------------------------------------------------------------------------|-----------------|
+| `video_input_type`     | `str`                        | Video input type. Choices: `video_id` (for Kling AI generated videos), `video_url` (for uploads).     | `video_id`      |
+| `video_id`             | `str`                        | Video ID from previous Kling AI video generation (required when using `video_id` input type).         |                 |
+| `video_url`            | `VideoUrlArtifact` / `str`   | Video file or URL for lip sync (required when using `video_url` input type).                          |                 |
+| `voice_type`           | `str`                        | Voice input type. Choices: `text` (text-to-speech), `audio` (audio file).                             | `text`          |
+| `voice_text`           | `str`                        | Text to convert to speech (used when `voice_type` is `text`).                                          | `""`            |
+| `voice_audio_url`      | `str`                        | URL to audio file (used when `voice_type` is `audio`).                                                 | `""`            |
+| `voice_speaker`        | `str`                        | TTS voice speaker (used when `voice_type` is `text`). Choices: `ai_shatang`, `ai_kaiya`, `ai_chenjiahao_712`, `ai_huangzhong_712`, `ai_huangyaoshi_712`, `ai_laoguowang_712`, `uk_boy1`, `uk_man2`, `uk_oldman3`, `oversea_male1`, `commercial_lady_en_f-v1`, `reader_en_m-v1`. | `ai_shatang`    |
+| `voice_speed`          | `float`                      | Speech speed multiplier (0.5-2.0). 1.0 = normal speed.                                                | `1.0`           |
+| `voice_volume`         | `float`                      | Speech volume multiplier (0.1-2.0). 1.0 = normal volume.                                              | `1.0`           |
+| `callback_url`         | `str`                        | Callback notification address for task status changes.                                                 | `""`            |
+| `lip_sync_video_url`   | `VideoUrlArtifact`           | **Output:** URL of the lip-synced video.                                                               | `None`          |
+| `task_id`              | `str`                        | **Output:** The Task ID of the lip-sync video from Kling AI.                                           | `None`          |
+
+*Note: `Video Input`, `Voice Settings`, `Text-to-Speech Settings`, and `Callback` parameters are grouped and may be collapsed by default in the UI.*
 
 ## Add your library to your installed Engine! 
 
