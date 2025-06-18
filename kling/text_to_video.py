@@ -1,6 +1,7 @@
 import time
 import jwt
 import requests
+import json
 from griptape.artifacts import TextArtifact, UrlArtifact
 from griptape_nodes.traits.options import Options
 
@@ -11,7 +12,7 @@ from griptape_nodes.retained_mode.griptape_nodes import logger
 SERVICE = "Kling"
 API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
 SECRET_KEY_ENV_VAR = "KLING_SECRET_KEY"  # noqa: S105
-BASE_URL = "https://api.klingai.com/v1/videos/text2video"
+BASE_URL = "https://api-singapore.klingai.com/v1/videos/text2video"
 
 class VideoUrlArtifact(UrlArtifact):
     """
@@ -58,7 +59,7 @@ class KlingAI_TextToVideo(ControlNode):
                 default_value="kling-v1",
                 tooltip="Model Name",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["kling-v1", "kling-v1-6", "kling-v2-master"])},
+                traits={Options(choices=["kling-v1", "kling-v1-5", "kling-v1-6", "kling-v2-master"])},
             )
         )
         self.add_parameter(
@@ -233,7 +234,7 @@ class KlingAI_TextToVideo(ControlNode):
         )
 
     def validate_node(self) -> list[Exception] | None:
-        """Validates that the Kling API keys are configured.
+        """Validates that the Kling API keys are configured and model constraints.
         Returns:
             list[Exception] | None: List of exceptions if validation fails, None if validation passes.
         """
@@ -250,7 +251,36 @@ class KlingAI_TextToVideo(ControlNode):
                 ValueError(f"Kling secret key not found. Please set the {SECRET_KEY_ENV_VAR} environment variable.")
             )
 
+        # Model-specific validation based on capability matrix
+        model = self.get_parameter_value("model_name")
+        mode = self.get_parameter_value("mode")
+        camera_control = self.get_parameter_value("camera_control_type")
+        
+        # V1-5 text-to-video restriction  
+        if model == "kling-v1-5":
+            errors.append(ValueError("kling-v1-5 does not support text-to-video generation. Use image-to-video instead."))
+
         return errors if errors else None
+
+    def after_value_set(self, parameter: Parameter, value: any, modified_parameters_set: set[str]) -> None:
+        """Update parameter visibility based on model selection."""
+        if parameter.name == "model_name":
+            # Only hide features for v1-5 since it doesn't support text-to-video at all
+            if value == "kling-v1-5":
+                # Hide camera controls for v1-5 since it doesn't support text-to-video
+                self.hide_parameter_by_name(["camera_control_type", "camera_config_horizontal", 
+                                            "camera_config_vertical", "camera_config_pan", 
+                                            "camera_config_tilt", "camera_config_roll", "camera_config_zoom"])
+            else:
+                # Show all features for other models - let API decide what's supported
+                self.show_parameter_by_name(["camera_control_type", "camera_config_horizontal", 
+                                            "camera_config_vertical", "camera_config_pan", 
+                                            "camera_config_tilt", "camera_config_roll", "camera_config_zoom"])
+                
+            # Add all potentially modified parameters to the set
+            modified_parameters_set.update(["camera_control_type", "camera_config_horizontal", 
+                                          "camera_config_vertical", "camera_config_pan", 
+                                          "camera_config_tilt", "camera_config_roll", "camera_config_zoom"])
 
     def process(self) -> AsyncResult:
         prompt = self.get_parameter_value("prompt")
@@ -306,28 +336,79 @@ class KlingAI_TextToVideo(ControlNode):
                     cc_payload["config"] = None
                 payload["camera_control"] = cc_payload
             
+            logger.info(f"Kling Text-to-Video API Request Payload: {json.dumps(payload, indent=2)}")
             response = requests.post(BASE_URL, headers=headers, json=payload)  # noqa: S113 Collin is this ok to ignore?
-            response.raise_for_status()
-            task_id = response.json()["data"]["task_id"]
+            logger.info(f"Initial response status: {response.status_code}")
+            logger.info(f"Initial response headers: {dict(response.headers)}")
+            logger.info(f"Initial response text: {response.text[:500]}...")  # First 500 chars
+            
+            try:
+                response.raise_for_status()
+                response_data = response.json()
+                task_id = response_data["data"]["task_id"]
+                logger.info(f"Task created with ID: {task_id}")
+            except requests.exceptions.JSONDecodeError as e:
+                logger.error(f"Failed to parse JSON from initial response. Status: {response.status_code}")
+                logger.error(f"Response text: {response.text}")
+                raise RuntimeError(f"Invalid JSON response from Kling API: {e}") from e
 
             poll_url = f"{BASE_URL}/{task_id}"
             video_url = None
             actual_video_id = None # Initialize variable to store the actual video ID
 
-            while True:
-                time.sleep(3)
-                result = requests.get(poll_url, headers=headers).json()  # noqa: S113 Collin is this ok to ignore?
-                status = result["data"]["task_status"]
-                logger.info(f"Video generation status: {status}")
-                if status == "succeed":
-                    logger.info(f"Video generation succeeded: {result['data']['task_result']['videos'][0]['url']}")
-                    video_url = result["data"]["task_result"]["videos"][0]["url"]
-                    actual_video_id = result["data"]["task_result"]["videos"][0]["id"] # Extract the correct video ID
-                    break
-                if status == "failed":
-                    error_msg = f"Video generation failed: {result['data']['task_status_msg']}"
-                    logger.error(error_msg)
-                    raise RuntimeError(error_msg)
+            max_retries = 60  # 60 retries * 5 seconds = 5 minutes timeout
+            retry_count = 0
+            
+            while retry_count < max_retries:
+                time.sleep(5)  # Increased from 3 to 5 seconds
+                retry_count += 1
+                
+                try:
+                    result_response = requests.get(poll_url, headers=headers, timeout=30)  # noqa: S113
+                    logger.info(f"Polling response status: {result_response.status_code} (attempt {retry_count}/{max_retries})")
+                    
+                    if result_response.status_code != 200:
+                        logger.warning(f"Non-200 status code: {result_response.status_code}")
+                        logger.warning(f"Response text: {result_response.text[:500]}...")
+                        continue  # Retry on non-200 status
+                    
+                    logger.info(f"Polling response headers: {dict(result_response.headers)}")
+                    logger.info(f"Polling response text: {result_response.text[:500]}...")  # First 500 chars
+                    
+                    try:
+                        result = result_response.json()
+                    except requests.exceptions.JSONDecodeError as e:
+                        logger.error(f"Failed to parse JSON from polling response. Status: {result_response.status_code}")
+                        logger.error(f"Response text: {result_response.text}")
+                        logger.error(f"Response headers: {dict(result_response.headers)}")
+                        if retry_count < max_retries:
+                            logger.info(f"Retrying in 5 seconds... (attempt {retry_count}/{max_retries})")
+                            continue
+                        else:
+                            raise RuntimeError(f"Invalid JSON response from Kling API after {max_retries} attempts: {e}") from e
+                    
+                    status = result["data"]["task_status"]
+                    logger.info(f"Video generation status: {status}")
+                    if status == "succeed":
+                        logger.info(f"Video generation succeeded: {result['data']['task_result']['videos'][0]['url']}")
+                        video_url = result["data"]["task_result"]["videos"][0]["url"]
+                        actual_video_id = result["data"]["task_result"]["videos"][0]["id"] # Extract the correct video ID
+                        break
+                    if status == "failed":
+                        error_msg = f"Video generation failed: {result['data']['task_status_msg']}"
+                        logger.error(error_msg)
+                        raise RuntimeError(error_msg)
+                    # Continue polling for "submitted", "processing", etc.
+                    
+                except requests.exceptions.RequestException as e:
+                    logger.warning(f"Request failed (attempt {retry_count}/{max_retries}): {e}")
+                    if retry_count >= max_retries:
+                        raise RuntimeError(f"Failed to poll task status after {max_retries} attempts: {e}") from e
+                    logger.info(f"Retrying in 5 seconds...")
+                    continue
+
+            if not video_url:
+                raise RuntimeError(f"Video generation timed out after {max_retries * 5 / 60:.1f} minutes. Task may still be processing.")
 
             self.publish_update_to_parameter("video_url", VideoUrlArtifact(video_url))
             if actual_video_id: # Publish the correct video ID if found

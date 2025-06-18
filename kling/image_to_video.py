@@ -13,7 +13,7 @@ from griptape_nodes.retained_mode.griptape_nodes import logger
 SERVICE = "Kling"
 API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
 SECRET_KEY_ENV_VAR = "KLING_SECRET_KEY"  # noqa: S105
-BASE_URL = "https://api.klingai.com/v1/videos/image2video" # Adjusted for image-to-video
+BASE_URL = "https://api-singapore.klingai.com/v1/videos/image2video" # Adjusted for image-to-video
 
 
 class VideoUrlArtifact(UrlArtifact):
@@ -312,6 +312,13 @@ class KlingAI_ImageToVideo(ControlNode):
             except json.JSONDecodeError:
                 errors.append(ValueError("Dynamic Masks 'dynamic_masks' is not a valid JSON string."))
 
+        # Model-specific validation based on capability matrix
+        model = self.get_parameter_value("model_name")
+        mode = self.get_parameter_value("mode")
+        camera_control = self.get_parameter_value("camera_control_type")
+        
+        # No model-specific restrictions - let API return proper errors
+
         return errors if errors else None
 
     def process(self) -> AsyncResult:
@@ -414,11 +421,21 @@ class KlingAI_ImageToVideo(ControlNode):
                     
                     status = result["data"]["task_status"]
                     logger.info(f"Kling video generation status (Task ID: {task_id}): {status} (Attempt {attempt + 1}/{max_retries})")
+                    
+                    # Log full response for debugging on first few attempts
+                    if attempt < 3:
+                        logger.debug(f"Full API response (attempt {attempt + 1}): {json.dumps(result, indent=2)}")
 
                     if status == "succeed":
-                        video_url = result["data"]["task_result"]["videos"][0]["url"]
-                        actual_video_id = result["data"]["task_result"]["videos"][0]["id"] # Extract the correct video ID
-                        logger.info(f"Kling video generation succeeded: {video_url}")
+                        logger.info(f"Kling video generation succeeded. Full response: {json.dumps(result, indent=2)}")
+                        try:
+                            video_url = result["data"]["task_result"]["videos"][0]["url"]
+                            actual_video_id = result["data"]["task_result"]["videos"][0]["id"] # Extract the correct video ID
+                            logger.info(f"Extracted video URL: {video_url}, video ID: {actual_video_id}")
+                        except (KeyError, IndexError, TypeError) as e:
+                            logger.error(f"Failed to extract video URL from response: {e}")
+                            logger.error(f"Response structure: {json.dumps(result, indent=2)}")
+                            raise RuntimeError(f"Failed to extract video URL from API response: {e}") from e
                         break
                     if status == "failed":
                         error_msg = result["data"].get("task_status_msg", "Unknown error")
@@ -432,6 +449,7 @@ class KlingAI_ImageToVideo(ControlNode):
                         raise RuntimeError(f"Failed to get video status after multiple retries: {e}") from e
 
             if not video_url:
+                logger.error(f"Polling completed but no video URL found. Final status may not have been 'succeed'. Task ID: {task_id}")
                 raise RuntimeError("Kling video generation task finished but no video URL was found or task timed out.")
 
             video_artifact = VideoUrlArtifact(url=video_url)
@@ -442,3 +460,19 @@ class KlingAI_ImageToVideo(ControlNode):
             return video_artifact
 
         yield generate_video 
+
+    def after_value_set(self, parameter: Parameter, value: any, modified_parameters_set: set[str]) -> None:
+        """Update parameter visibility based on model selection."""
+        if parameter.name == "model_name":
+            # Show all features for all models - let API decide what's supported
+            self.show_parameter_by_name("mode")
+            self.show_parameter_by_name(["camera_control_type", "camera_config_horizontal", 
+                                        "camera_config_vertical", "camera_config_pan", 
+                                        "camera_config_tilt", "camera_config_roll", "camera_config_zoom"])
+            self.show_parameter_by_name(["static_mask", "dynamic_masks"])
+                
+            # Add all potentially modified parameters to the set
+            modified_parameters_set.update(["camera_control_type", "camera_config_horizontal", 
+                                          "camera_config_vertical", "camera_config_pan", 
+                                          "camera_config_tilt", "camera_config_roll", "camera_config_zoom",
+                                          "static_mask", "dynamic_masks"]) 

@@ -20,7 +20,9 @@
             "Griptape",
             "AI",
             "Kling",
-            "Video Generation"
+            "Video Generation",
+            "Image Generation",
+            "Lip Sync"
         ],
         "dependencies": {
             "pip_dependencies": [
@@ -63,8 +65,17 @@
             "file_path": "video_extension.py",
             "metadata": {
                 "category": "Kling AI",
-                "description": "Extends an existing Kling AI video by 4-5 seconds.",
+                "description": "Extends existing videos by 4-5 seconds using Kling AI (V1.5 only). Max total: 3 minutes.",
                 "display_name": "Kling Video Extension"
+            }
+        },
+        {
+            "class_name": "KlingAI_LipSync",
+            "file_path": "lip_sync.py",
+            "metadata": {
+                "category": "Kling AI",
+                "description": "Creates lip-sync videos by synchronizing speech to video using Kling AI.",
+                "display_name": "Kling Lip-Sync"
             }
         }
     ]
