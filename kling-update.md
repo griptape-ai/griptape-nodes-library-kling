@@ -11,6 +11,8 @@ Kling AI has released significant updates including v2.0 models, new API endpoin
 
 ### Model Capability Matrix (from API Documentation)
 
+Full API documentation can be accessed at https://app.klingai.com/global/dev/document-api/quickStart/productIntroduction/overview you will also find links to model specific documentations pages later in this plan in the relevant sections.
+
 | Model | Text-to-Video | Image-to-Video | Multi-Image | Video Extension | Lip-Sync | Video Effects | Camera Control | Motion Brush |
 |-------|---------------|----------------|-------------|-----------------|----------|---------------|----------------|--------------|
 | **kling-v1** | ✅ All modes | ✅ All modes | ❌ | ❌ | ❌ | ✅ All modes | ✅ | ✅ |
@@ -26,15 +28,15 @@ Kling AI has released significant updates including v2.0 models, new API endpoin
 - **Duration constraints**: v2 models support 5s and 10s only (no pro/std distinction)
 
 ### New Model Support
-- **kling-v2-master & kling-v2-1**: New v2 models for both text-to-image and text-to-video
+- **kling-v2-master & kling-v2-1**: New v2 models for both text-to-video and image-to-video
 - **Multi-Image to Video**: Support for up to 4 input images (kling-v1-6 only)
 - **Custom Aspect Ratios**: 16:9, 9:16, 1:1 for v2 models
 
 ### New Capabilities
-1. **Image Generation**: kling-v2-master & kling-v2-1 text-to-image with character reference features
-2. **Image Expansion**: Expand images in any direction (background expansion)
-3. **Virtual Try-On**: AI-powered clothing try-on with multiple model versions
-4. **Multi-Image Video**: Generate videos from multiple input images
+1. **Text to Image Generation**: kling-v1, kling-v1-5 & kling-v2 text-to-image
+2. **Image to Image Generation**: Use the same kling-v1, kling-v1-5 models with image reference features to generate image from existing images, plus prompts. kling-v1 supports entire image only. kling-v1-5 supports subject and face references.
+3. **Virtual Try-On**: AI-powered clothing try-on with the kolors-virtual-try-on-v1 model
+4. **Multi-Image Video**: Generate videos from multiple input images with the kling-v1-6 model
 5. **Video Effects**: Creative effects (hug, kiss, heart_gesture, bloom, dizzy, fuzzy, squish, expansion)
 6. **Enhanced Image-to-Video**: V2 model support
 7. **Video Extension**: Continue videos for additional 4-5 seconds
@@ -65,7 +67,7 @@ Kling AI has released significant updates including v2.0 models, new API endpoin
 - [ ] Add v2 model validation logic
 - [ ] Update model choices in existing nodes
 
-#### 1.2 Update Existing Nodes
+#### 1.2 Create New Text to Video and Image to Video Nodes based on the existing nodes. These new nodes should include the following updates.
 
 ##### Text-to-Video Node Updates
 - [ ] Add `kling-v2-master` and `kling-v2-1` to model choices
@@ -91,8 +93,9 @@ Kling AI has released significant updates including v2.0 models, new API endpoin
 
 ### Phase 2: New Node Development (High Priority)
 
-#### 2.1 Create Image Generation Node
+#### 2.1 Create Text to Image Generation Node
 **File**: `text_to_image.py`
+**Documentation**: https://app.klingai.com/global/dev/document-api/apiReference/model/imageGeneration
 
 ```python
 # API Endpoint: /v1/images/generations
@@ -100,11 +103,6 @@ Kling AI has released significant updates including v2.0 models, new API endpoin
 # - prompt (str): Text description (max 2500 chars)
 # - model_name (str): kling-v1-5, kling-v2-master, kling-v2-1
 # - negative_prompt (str): Optional negative prompt (max 2500 chars)
-# - image (ImageArtifact): Optional reference image for character appearance
-# - image_reference (str): "subject" or "face" - character reference type (v1.5 only)
-# - image_fidelity (float): Face reference intensity 0-1 (v1.5 only)
-# - human_fidelity (float): Human appearance reference intensity 0-1 (v1.5 only)
-# - resolution (str): "1K" or "2K" - image generation resolution
 # - n (int): Number of images to generate (1-8)
 # - aspect_ratio (str): 16:9, 9:16, 1:1, 4:3, 3:4, 3:2, 2:3, 21:9
 # - callback_url (str): Optional callback URL
@@ -113,37 +111,36 @@ Kling AI has released significant updates including v2.0 models, new API endpoin
 
 - [ ] Create base node structure inheriting from `ControlNode`
 - [ ] Add all image generation parameters with proper validation
-- [ ] Implement character reference functionality for v1.5 (subject/face modes)
-- [ ] Add separate image_fidelity and human_fidelity controls
-- [ ] Add resolution parameter (1K/2K) with proper validation
 - [ ] Add support for generating multiple images (n=1-8)
 - [ ] Add comprehensive aspect ratio support (8 options)
 - [ ] Add proper image artifact output (handle multiple images)
 - [ ] Implement polling logic for image generation
 - [ ] Add comprehensive validation for model-specific features
 
-#### 2.2 Create Image Expansion Node
-**File**: `image_expansion.py`
+#### 2.2 Create Image to Image Generation Node
+**File**: `image_to_image.py`
+**Documentation**: https://app.klingai.com/global/dev/document-api/apiReference/model/imageGeneration
 
 ```python
 # API Endpoint: /v1/images/expansions/background
 # Key Parameters:
-# - image (ImageArtifact): Required reference image to expand
-# - new_expanded_ratio_left (float): Left expansion ratio (0-2)
-# - new_expanded_ratio_right (float): Right expansion ratio (0-2)
-# - new_expanded_ratio_top (float): Top expansion ratio (0-2)
-# - new_expanded_ratio_bottom (float): Bottom expansion ratio (0-2)
-# - prompt (str): Optional positive text prompt
-# - n (int): Number of generated images (default 1)
-# - callback_url (str): Optional callback URL
+# - image (ImageArtifact): Optional reference image
+# - prompt (str): Required positive text prompt
+# - negative_prompt (str): Optional negative text prompt
+# - image_ref_type (str): Optional image reference type. Required when using the kling-v1-5 model if a reference image is provided. Must be set to either subject or face. 
+# - image_fidelity (float): Optional reference intensity. Value range 0 to 1. Default value 0.5
+# - human_fidelity (float): Optional facial reference intensity. Value range 0 to 1. Default value 0.5
+# - n (int): Optional number of generated images. Value range 1 to 9. Default value 1
+# - aspect_ratio (str): Optional aspect ratio of the generated images. Options (16:9, 9:16, 1:1, 4:3, 3:4, 3:2, 2:3, 21:9). Default 1:1.
 # - external_task_id (str): Optional custom task ID
 ```
 
 - [ ] Create base node structure inheriting from `ControlNode`
 - [ ] Add image input parameter with proper validation
-- [ ] Add four expansion ratio parameters with 0-2 range validation
-- [ ] Add optional prompt parameter for guided expansion
-- [ ] Add support for generating multiple expanded versions
+- [ ] Add text input parameters for prompt, negative_prompt, with input connections 
+- [ ] Add slider parameters for image_fidelity, human_fidelity, with the correct defaults of 0.5
+- [ ] Add slider parameter for n with the correct default of 1
+- [ ] Add dropdown list parameter for aspect_ratio with the default of 1:1
 - [ ] Implement proper image artifact output
 - [ ] Add expansion preview/visualization helpers if possible
 - [ ] Implement polling logic for image expansion
@@ -151,6 +148,7 @@ Kling AI has released significant updates including v2.0 models, new API endpoin
 
 #### 2.3 Create Virtual Try-On Node
 **File**: `virtual_try_on.py`
+**Documentation**: https://app.klingai.com/global/dev/document-api/apiReference/model/functionalityTry
 
 ```python
 # API Endpoint: /v1/images/kolors-virtual-try-on
@@ -181,8 +179,9 @@ Kling AI has released significant updates including v2.0 models, new API endpoin
 - [ ] Implement polling logic for try-on completion
 - [ ] Add comprehensive validation for clothing/human image compatibility
 
-#### 2.4 Update Existing Image-to-Video Node
+#### 2.4 Create new v2 Existing Image-to-Video Node
 **File**: `image_to_video.py` (Update existing)
+**Documentation**: https://app.klingai.com/global/dev/document-api/apiReference/model/imageToVideo
 
 ```python
 # API Endpoint: /v1/videos/image2video  
@@ -215,6 +214,7 @@ Kling AI has released significant updates including v2.0 models, new API endpoin
 
 #### 2.4 Create Multi-Image Video Node
 **File**: `multi_image_to_video.py`
+**Documentation**: https://app.klingai.com/global/dev/document-api/apiReference/model/multiImageToVideo
 
 ```python
 # API Endpoint: /v1/videos/multi-images2video
@@ -245,6 +245,7 @@ Kling AI has released significant updates including v2.0 models, new API endpoin
 
 #### 3.1 Video Effects Node
 **File**: `video_effects.py`
+**Documentation**: https://app.klingai.com/global/dev/document-api/apiReference/model/videoEffects
 
 ```python
 # API Endpoint: /v1/videos/effects
@@ -283,6 +284,7 @@ Kling AI has released significant updates including v2.0 models, new API endpoin
 
 #### 3.2 Video Extension Node
 **File**: `video_extension.py`
+**Documentation**: https://app.klingai.com/global/dev/document-api/apiReference/model/videoDuration
 
 ```python
 # API Endpoint: /v1/videos/video-extend
@@ -313,6 +315,7 @@ Kling AI has released significant updates including v2.0 models, new API endpoin
 
 #### 3.3 Lip-Sync Node  
 **File**: `lip_sync.py`
+**Documentation**: https://app.klingai.com/global/dev/document-api/apiReference/model/videoTolip
 
 ```python
 # API Endpoint: /v1/videos/lip-sync
@@ -402,6 +405,7 @@ def after_value_set(self, parameter, value, modified_parameters_set):
             self.show_parameter_by_name("mode")
         modified_parameters_set.add("mode")
         modified_parameters_set.add("aspect_ratio")
+        return super().after_value_set(parameter, value, modified_parameters_set)
 ```
 
 #### Environment Variable Pattern
