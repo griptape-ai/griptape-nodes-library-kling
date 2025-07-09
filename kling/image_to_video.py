@@ -92,10 +92,10 @@ class KlingAI_ImageToVideo(ControlNode):
                 input_types=["str"],
                 output_type="str",
                 type="str",
-                default_value="kling-v1",
+                default_value="kling-v1-6",
                 tooltip="Model Name for generation.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["kling-v1", "kling-v1-5", "kling-v1-6", "kling-v2-master"])},
+                traits={Options(choices=["kling-v1-6", "kling-v2-master"])},
             )
             Parameter(
                 name="cfg_scale",
@@ -461,7 +461,7 @@ class KlingAI_ImageToVideo(ControlNode):
 
         yield generate_video 
 
-    def after_value_set(self, parameter: Parameter, value: any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(self, parameter: Parameter, value: any, modified_parameters_set: set[str] | None = None) -> None:
         """Update parameter visibility based on model selection."""
         if parameter.name == "model_name":
             # Show all features for all models - let API decide what's supported
@@ -471,8 +471,9 @@ class KlingAI_ImageToVideo(ControlNode):
                                         "camera_config_tilt", "camera_config_roll", "camera_config_zoom"])
             self.show_parameter_by_name(["static_mask", "dynamic_masks"])
                 
-            # Add all potentially modified parameters to the set
-            modified_parameters_set.update(["camera_control_type", "camera_config_horizontal", 
-                                          "camera_config_vertical", "camera_config_pan", 
-                                          "camera_config_tilt", "camera_config_roll", "camera_config_zoom",
-                                          "static_mask", "dynamic_masks"]) 
+            # Add all potentially modified parameters to the set if provided
+            if modified_parameters_set is not None:
+                modified_parameters_set.update(["camera_control_type", "camera_config_horizontal", 
+                                              "camera_config_vertical", "camera_config_pan", 
+                                              "camera_config_tilt", "camera_config_roll", "camera_config_zoom",
+                                              "static_mask", "dynamic_masks"]) 
