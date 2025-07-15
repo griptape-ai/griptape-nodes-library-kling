@@ -262,7 +262,7 @@ class KlingAI_TextToVideo(ControlNode):
 
         return errors if errors else None
 
-    def after_value_set(self, parameter: Parameter, value: any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(self, parameter: Parameter, value: any, modified_parameters_set: set[str] | None = None) -> None:
         """Update parameter visibility based on model selection."""
         if parameter.name == "model_name":
             # Only hide features for v1-5 since it doesn't support text-to-video at all
@@ -277,10 +277,11 @@ class KlingAI_TextToVideo(ControlNode):
                                             "camera_config_vertical", "camera_config_pan", 
                                             "camera_config_tilt", "camera_config_roll", "camera_config_zoom"])
                 
-            # Add all potentially modified parameters to the set
-            modified_parameters_set.update(["camera_control_type", "camera_config_horizontal", 
-                                          "camera_config_vertical", "camera_config_pan", 
-                                          "camera_config_tilt", "camera_config_roll", "camera_config_zoom"])
+            # Add all potentially modified parameters to the set if provided
+            if modified_parameters_set is not None:
+                modified_parameters_set.update(["camera_control_type", "camera_config_horizontal", 
+                                              "camera_config_vertical", "camera_config_pan", 
+                                              "camera_config_tilt", "camera_config_roll", "camera_config_zoom"])
 
     def process(self) -> AsyncResult:
         prompt = self.get_parameter_value("prompt")

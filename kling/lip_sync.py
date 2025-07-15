@@ -74,6 +74,9 @@ class KlingAI_LipSync(ControlNode):
         video_group.ui_options = {"hide": False}
         self.add_node_element(video_group)
 
+        # Set initial parameter visibility based on default video_input_type
+        self.hide_parameter_by_name("video_url")  # Hide video_url since default is "video_id"
+
         # Voice Settings Group
         with ParameterGroup(name="Voice Settings") as voice_group:
             Parameter(
@@ -108,6 +111,9 @@ class KlingAI_LipSync(ControlNode):
             )
         voice_group.ui_options = {"hide": False}
         self.add_node_element(voice_group)
+
+        # Set initial parameter visibility based on default voice_type
+        self.hide_parameter_by_name("voice_audio_url")  # Hide audio URL since default is "text"
 
         # TTS Settings Group (for text-to-speech)
         with ParameterGroup(name="Text-to-Speech Settings") as tts_group:
@@ -224,7 +230,7 @@ class KlingAI_LipSync(ControlNode):
 
         return errors if errors else None
 
-    def after_value_set(self, parameter: Parameter, value: any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(self, parameter: Parameter, value: any, modified_parameters_set: set[str] | None = None) -> None:
         """Update parameter visibility based on video input type and voice type selection."""
         if parameter.name == "video_input_type":
             if value == "video_id":
@@ -236,7 +242,8 @@ class KlingAI_LipSync(ControlNode):
                 self.show_parameter_by_name("video_url")
                 self.hide_parameter_by_name("video_id")
                 
-            modified_parameters_set.update(["video_id", "video_url"])
+            if modified_parameters_set is not None:
+                modified_parameters_set.update(["video_id", "video_url"])
             
         elif parameter.name == "voice_type":
             if value == "text":
@@ -248,7 +255,8 @@ class KlingAI_LipSync(ControlNode):
                 self.show_parameter_by_name("voice_audio_url")
                 self.hide_parameter_by_name(["voice_text", "voice_speaker", "voice_speed", "voice_volume"])
                 
-            modified_parameters_set.update(["voice_text", "voice_audio_url", "voice_speaker", "voice_speed", "voice_volume"])
+            if modified_parameters_set is not None:
+                modified_parameters_set.update(["voice_text", "voice_audio_url", "voice_speaker", "voice_speed", "voice_volume"])
 
     def process(self) -> AsyncResult:
         # Validate before yielding
