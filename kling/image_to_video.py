@@ -42,22 +42,39 @@ class KlingAI_ImageToVideo(ControlNode):
         self.category = "AI/Kling"
         self.description = "Generates a video from an image using Kling AI."
 
+        # Model Selection (at top)
+        self.add_parameter(
+            Parameter(
+                name="model_name",
+                input_types=["str"],
+                output_type="str",
+                type="str",
+                default_value="kling-v2-1-master",
+                tooltip="Model Name for generation.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=["kling-v1", "kling-v1-5", "kling-v1-6", "kling-v2-master", "kling-v2-1", "kling-v2-1-master"])},
+                ui_options={"display_name": "Model"}
+            )
+        )
+
         # Image Inputs Group
         with ParameterGroup(name="Image Inputs") as image_group:
             Parameter(
                 name="image",
                 input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
-                type="ImageArtifact", # Hint for UI/internal consistency
-                tooltip="Reference Image (required). Input ImageArtifact, ImageUrlArtifact, direct URL string, or Base64 string.",
+                type="ImageArtifact",
+                tooltip="Reference Image (start frame) - required. Input ImageArtifact, ImageUrlArtifact, direct URL string, or Base64 string.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "Start Frame"}
             )
             Parameter(
                 name="image_tail",
                 input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
                 type="ImageArtifact",
                 default_value=None,
-                tooltip="Reference Image - End frame control. Input ImageArtifact, ImageUrlArtifact, direct URL string, or Base64 string.",
+                tooltip="Reference Image (end frame) - optional. Only supported by certain models. Input ImageArtifact, ImageUrlArtifact, direct URL string, or Base64 string.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "End Frame", "hide": True}  # Start hidden, will be shown for supported models 
             )
         self.add_node_element(image_group)
 
@@ -88,16 +105,6 @@ class KlingAI_ImageToVideo(ControlNode):
         # Generation Settings Group
         with ParameterGroup(name="Generation Settings") as gen_settings_group:
             Parameter(
-                name="model_name",
-                input_types=["str"],
-                output_type="str",
-                type="str",
-                default_value="kling-v1-6",
-                tooltip="Model Name for generation.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["kling-v1-6", "kling-v2-master"])},
-            )
-            Parameter(
                 name="cfg_scale",
                 input_types=["float"],
                 output_type="float",
@@ -118,13 +125,13 @@ class KlingAI_ImageToVideo(ControlNode):
             )
             Parameter(
                 name="duration",
-                input_types=["str"], # API expects string "5" or "10"
-                output_type="str",
-                type="str",
-                default_value="5",
+                input_types=["int"],
+                output_type="int",
+                type="int",
+                default_value=5,
                 tooltip="Video Length in seconds.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["5", "10"])}
+                traits={Options(choices=[5, 10])}
             )
         self.add_node_element(gen_settings_group)
 
@@ -135,7 +142,7 @@ class KlingAI_ImageToVideo(ControlNode):
                 input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
                 type="ImageArtifact",
                 default_value=None,
-                tooltip="Static Brush Application Area. Input ImageArtifact, ImageUrlArtifact, direct URL, or Base64 string. Mutually exclusive with Camera Controls.",
+                tooltip="Static Brush Application Area. Input ImageArtifact, ImageUrlArtifact, direct URL, or Base64 string.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
             Parameter(
@@ -143,36 +150,12 @@ class KlingAI_ImageToVideo(ControlNode):
                 input_types=["str"],
                 type="str",
                 default_value=None,
-                tooltip="JSON string for Dynamic Brush Configuration List. Masks within JSON must be URL/Base64. Mutually exclusive with Camera Controls.",
+                tooltip="JSON string for Dynamic Brush Configuration List. Masks within JSON must be URL/Base64.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"multiline": True, "placeholder_text": "Enter JSON for dynamic masks..."},
             )
         masks_group.ui_options = {"hide": True}
         self.add_node_element(masks_group)
-
-        # Camera Control Parameters Group (similar to text2video)
-        with ParameterGroup(name="Camera Controls") as camera_group:
-            Parameter(
-                name="camera_control_type",
-                input_types=["str"],
-                output_type="str",
-                type="str",
-                default_value="(Auto)",
-                tooltip="Predefined camera movement. (Auto) for model default. 'simple' requires one config value. Mutually exclusive with Masks.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["(Auto)", "simple", "down_back", "forward_up", "right_turn_forward", "left_turn_forward"])}
-            )
-            # Individual camera config parameters (horizontal, vertical, pan, tilt, roll, zoom)
-            for DoterraAction in ["horizontal", "vertical", "pan", "tilt", "roll", "zoom"]:
-                 Parameter(
-                    name=f"camera_config_{DoterraAction}", # noqa: E741
-                    input_types=["float"], output_type="float", type="float", default_value=0.0,
-                    tooltip=f"Camera {DoterraAction} movement (-10 to 10). Use if type is 'simple'.",
-                    allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                )
-        camera_group.ui_options = {"hide": True}
-        self.add_node_element(camera_group)
-
         # Callback Parameters Group (similar to text2video)
         with ParameterGroup(name="Callback") as callback_group:
             Parameter(
@@ -214,8 +197,8 @@ class KlingAI_ImageToVideo(ControlNode):
             )
         )
 
-    def _get_image_api_data(self, param_name: str) -> str | None:
-        image_input = self.get_parameter_value(param_name)
+    def _get_image_api_data_from_input(self, image_input) -> str | None:
+        """Convert a single image input to API format"""
 
         # Helper to convert URL to Base64 if it's local
         def resolve_url_to_data(url_string: str) -> str:
@@ -228,7 +211,7 @@ class KlingAI_ImageToVideo(ControlNode):
 
             if is_local_http and url_string.startswith("http"):
                 try:
-                    logger.info(f"_get_image_api_data: Converting local URL {url_string} to Base64 for {param_name}.")
+                    logger.info(f"_get_image_api_data: Converting local URL {url_string} to Base64.")
                     response = requests.get(url_string, timeout=10) # Fetch content from local URL
                     response.raise_for_status()
                     return base64.b64encode(response.content).decode('utf-8') # Return Base64
@@ -236,7 +219,7 @@ class KlingAI_ImageToVideo(ControlNode):
                     logger.error(f"_get_image_api_data: Failed to fetch local URL {url_string} for Base64 conversion: {e}")
                     return url_string # Fallback: send original URL, API will likely fail
             elif is_relative_static:
-                logger.warning(f"_get_image_api_data: Relative URL {url_string} for {param_name} provided. Sending as-is. Kling API requires a public URL or Base64.")
+                logger.warning(f"_get_image_api_data: Relative URL {url_string} provided. Sending as-is. Kling API requires a public URL or Base64.")
                 return url_string # Send as-is, likely problematic for API
             
             return url_string # Return public URL or pre-formatted Base64 string as is
@@ -246,7 +229,7 @@ class KlingAI_ImageToVideo(ControlNode):
         elif isinstance(image_input, ImageArtifact): # Already Base64
             return image_input.base64
         elif isinstance(image_input, dict):
-            logger.info(f"_get_image_api_data: received dict for {param_name}: {image_input}")
+            logger.info(f"_get_image_api_data: received dict: {image_input}")
             input_type = image_input.get("type")
             url_from_dict = image_input.get("value")
             base64_from_dict = image_input.get("base64")
@@ -256,13 +239,18 @@ class KlingAI_ImageToVideo(ControlNode):
             elif input_type == "ImageArtifact" and base64_from_dict:
                 return str(base64_from_dict) # Return Base64 from dict
             
-            logger.warning(f"_get_image_api_data: received unhandled dict structure for {param_name}: {image_input}")
+            logger.warning(f"_get_image_api_data: received unhandled dict structure: {image_input}")
             return None
         elif isinstance(image_input, str) and image_input.strip():
              # If it's a raw string, it could be a public URL, Base64, or a local URL.
             return resolve_url_to_data(image_input.strip())
         
         return None
+
+    def _get_image_api_data(self, param_name: str) -> str | None:
+        """Get image API data from parameter name"""
+        image_input = self.get_parameter_value(param_name)
+        return self._get_image_api_data_from_input(image_input)
 
     def validate_node(self) -> list[Exception] | None:
         errors = []
@@ -274,55 +262,44 @@ class KlingAI_ImageToVideo(ControlNode):
         if not secret_key:
             errors.append(ValueError(f"Kling secret key not found. Set {SECRET_KEY_ENV_VAR}."))
 
-        # Log the raw parameter value for 'image'
-        raw_image_param = self.get_parameter_value("image")
-        logger.info(f"KlingAI_ImageToVideo validate_node: raw 'image' parameter value: {raw_image_param}, type: {type(raw_image_param)}")
-        if isinstance(raw_image_param, ImageUrlArtifact):
-            logger.info(f"KlingAI_ImageToVideo validate_node: 'image' is ImageUrlArtifact with value: '{raw_image_param.value}'")
-        elif isinstance(raw_image_param, ImageArtifact):
-            logger.info(f"KlingAI_ImageToVideo validate_node: 'image' is ImageArtifact with base64 present: {bool(raw_image_param.base64)}")
-
+        # Validate images
         image_val = self._get_image_api_data("image")
         image_tail_val = self._get_image_api_data("image_tail")
         
-        logger.info(f"KlingAI_ImageToVideo validate_node: image_val from _get_image_api_data('image'): '{image_val}'")
-        logger.info(f"KlingAI_ImageToVideo validate_node: image_tail_val from _get_image_api_data('image_tail'): '{image_tail_val}'")
+        logger.info(f"KlingAI_ImageToVideo validate_node: image present: {bool(image_val)}, image_tail present: {bool(image_tail_val)}")
+        
+        if not image_val:
+            errors.append(ValueError("Start frame image must be provided."))
 
-        if not image_val and not image_tail_val:
-            logger.error("KlingAI_ImageToVideo validate_node: Failing because both image_val and image_tail_val are falsy.")
-            errors.append(ValueError("At least one of 'image' or 'image_tail' must be provided."))
-
-        static_mask_val = self._get_image_api_data("static_mask")
-        dynamic_masks_val_str = self.get_parameter_value("dynamic_masks")
-        camera_control_type_val = self.get_parameter_value("camera_control_type")
-
-        has_mask = bool(static_mask_val or (dynamic_masks_val_str and dynamic_masks_val_str.strip()))
-        has_camera_control = camera_control_type_val and camera_control_type_val != "(Auto)"
-
-        if has_mask and has_camera_control:
-            errors.append(ValueError("Masks (static_mask, dynamic_masks) and Camera Controls cannot be used simultaneously."))
+        # Minimal validation - UI should prevent most issues
+        model = self.get_parameter_value("model_name")
+        mode = self.get_parameter_value("mode")
+        duration = self.get_parameter_value("duration")
+        
+        # Only validate if somehow invalid combinations slip through UI
+        if model == "kling-v1" and duration != 5:
+            errors.append(ValueError("kling-v1 only supports 5s duration"))
+        if model in ["kling-v1-5", "kling-v1-6"] and mode != "pro":
+            errors.append(ValueError(f"{model} only supports pro mode"))
 
         cfg_scale_val = self.get_parameter_value("cfg_scale")
         if not (0 <= cfg_scale_val <= 1): # type: ignore[operator]
             errors.append(ValueError("cfg_scale must be between 0.0 and 1.0."))
         
+        dynamic_masks_val_str = self.get_parameter_value("dynamic_masks")
         if dynamic_masks_val_str and dynamic_masks_val_str.strip():
             try:
                 json.loads(dynamic_masks_val_str)
             except json.JSONDecodeError:
                 errors.append(ValueError("Dynamic Masks 'dynamic_masks' is not a valid JSON string."))
 
-        # Model-specific validation based on capability matrix
-        model = self.get_parameter_value("model_name")
-        mode = self.get_parameter_value("mode")
-        camera_control = self.get_parameter_value("camera_control_type")
-        
-        # No model-specific restrictions - let API return proper errors
-
         return errors if errors else None
 
-    def process(self) -> AsyncResult:
-        # Validate before yielding to ensure errors are caught early if possible
+    def process(self) -> AsyncResult[None]:
+        yield lambda: self._process()
+    
+    def _process(self):
+        # Validate before processing
         validation_errors = self.validate_node()
         if validation_errors:
             # Concatenate error messages for a single exception
@@ -335,26 +312,53 @@ class KlingAI_ImageToVideo(ControlNode):
             jwt_token = encode_jwt_token(access_key, secret_key) # type: ignore[arg-type]
             headers = {"Content-Type": "application/json", "Authorization": f"Bearer {jwt_token}"}
 
+            # Log all parameter values for debugging
+            model_name = self.get_parameter_value("model_name")
+            duration = self.get_parameter_value("duration")
+            cfg_scale = self.get_parameter_value("cfg_scale")
+            mode = self.get_parameter_value("mode")
+            
+            logger.info(f"DEBUG: Parameter values - model_name: {model_name}, duration: {duration}, cfg_scale: {cfg_scale}, mode: {mode}")
+
             payload: dict[str, any] = {
-                "model_name": self.get_parameter_value("model_name"),
-                "duration": str(self.get_parameter_value("duration")), # Ensure string
-                "cfg_scale": self.get_parameter_value("cfg_scale"),
-                "mode": self.get_parameter_value("mode"),
+                "model_name": model_name,
+                "duration": duration,
+                "cfg_scale": cfg_scale,
+                "mode": mode,
             }
 
             image_api = self._get_image_api_data("image")
-            if image_api:
-                payload["image"] = image_api
-            
             image_tail_api = self._get_image_api_data("image_tail")
+            
+            logger.info(f"DEBUG: Image data - image_api present: {bool(image_api)}, image_tail_api present: {bool(image_tail_api)}")
+            if image_api:
+                logger.info(f"DEBUG: image_api length: {len(image_api) if image_api else 0}")
+                # Check if it's a URL or Base64
+                if image_api.startswith(('http://', 'https://')):
+                    logger.info(f"DEBUG: image_api is URL: {image_api}")
+                else:
+                    logger.info(f"DEBUG: image_api is Base64 data (length: {len(image_api)})")
+                payload["image"] = image_api
             if image_tail_api:
-                payload["image_tail"] = image_tail_api
+                # Check if model supports image_tail before adding to payload
+                model = self.get_parameter_value("model_name")
+                if model in ["kling-v1-6"]:  # Only certain models support end frame
+                    logger.info(f"DEBUG: image_tail_api length: {len(image_tail_api) if image_tail_api else 0}")
+                    if image_tail_api.startswith(('http://', 'https://')):
+                        logger.info(f"DEBUG: image_tail_api is URL: {image_tail_api}")
+                    else:
+                        logger.info(f"DEBUG: image_tail_api is Base64 data (length: {len(image_tail_api)})")
+                    payload["image_tail"] = image_tail_api
+                else:
+                    logger.warning(f"DEBUG: Model {model} doesn't support end frame - ignoring image_tail")
 
             prompt_val = self.get_parameter_value("prompt")
+            neg_prompt_val = self.get_parameter_value("negative_prompt")
+            
+            logger.info(f"DEBUG: Prompts - prompt: '{prompt_val}', negative_prompt: '{neg_prompt_val}'")
+            
             if prompt_val and prompt_val.strip():
                 payload["prompt"] = prompt_val.strip()
-            
-            neg_prompt_val = self.get_parameter_value("negative_prompt")
             if neg_prompt_val and neg_prompt_val.strip():
                 payload["negative_prompt"] = neg_prompt_val.strip()
 
@@ -369,27 +373,6 @@ class KlingAI_ImageToVideo(ControlNode):
                     payload["dynamic_masks"] = json.loads(dynamic_masks_str)
                 except json.JSONDecodeError as e: # Should be caught by validate_node
                     raise ValueError(f"Invalid JSON in dynamic_masks: {e}") from e
-
-
-            # Camera Control - mutually exclusive with masks (checked in validate_node)
-            camera_control_type_val = self.get_parameter_value("camera_control_type")
-            if camera_control_type_val and camera_control_type_val != "(Auto)":
-                cc_payload: dict[str, any] = {"type": camera_control_type_val}
-                if camera_control_type_val == "simple":
-                    simple_config = {}
-                    # Ensure only non-zero values are added for 'simple' config, as per Kling docs
-                    # (Though their doc says "Choose one out of the following six parameters, meaning only one parameter should be non-zero")
-                    # For now, we add any non-zero param. User needs to ensure only one if that's a strict API rule.
-                    for DoterraAction in ["horizontal", "vertical", "pan", "tilt", "roll", "zoom"]:
-                        val = self.get_parameter_value(f"camera_config_{DoterraAction}")
-                        if val != 0.0: # type: ignore[comparison-overlap]
-                            simple_config[DoterraAction] = val
-                    if not simple_config: # API might require config if type is simple
-                         logger.warning("Camera control type is 'simple' but no config values are set (all are 0.0).")
-                    cc_payload["config"] = simple_config if simple_config else None # API may expect null if empty
-                else: # For "down_back", "forward_up", etc. config must be None/not sent.
-                    cc_payload["config"] = None # Explicitly None as per Kling text2video example
-                payload["camera_control"] = cc_payload
             
             callback_url_val = self.get_parameter_value("callback_url")
             if callback_url_val and callback_url_val.strip():
@@ -399,9 +382,34 @@ class KlingAI_ImageToVideo(ControlNode):
             if external_task_id_val and external_task_id_val.strip():
                 payload["external_task_id"] = external_task_id_val.strip()
             
-            logger.info(f"Kling Image-to-Video API Request Payload: {json.dumps(payload, indent=2)}")
-            response = requests.post(BASE_URL, headers=headers, json=payload, timeout=30) 
-            response.raise_for_status() # Raise HTTPError for bad responses (4XX or 5XX)
+            # Log payload without Base64 data to avoid terminal spam
+            log_payload = payload.copy()
+            if "image" in log_payload and not log_payload["image"].startswith(('http://', 'https://')):
+                log_payload["image"] = f"<BASE64_DATA_LENGTH:{len(log_payload['image'])}>"
+            if "image_tail" in log_payload and not log_payload["image_tail"].startswith(('http://', 'https://')):
+                log_payload["image_tail"] = f"<BASE64_DATA_LENGTH:{len(log_payload['image_tail'])}>"
+            if "static_mask" in log_payload and not log_payload["static_mask"].startswith(('http://', 'https://')):
+                log_payload["static_mask"] = f"<BASE64_DATA_LENGTH:{len(log_payload['static_mask'])}>"
+            
+            logger.info(f"Kling Image-to-Video API Request Payload: {json.dumps(log_payload, indent=2)}")
+            response = requests.post(BASE_URL, headers=headers, json=payload, timeout=30)
+            
+            # Enhanced debugging for API errors
+            logger.info(f"Initial response status: {response.status_code}")
+            logger.info(f"Initial response headers: {dict(response.headers)}")
+            logger.info(f"Initial response text: {response.text}")
+            
+            try:
+                response.raise_for_status() # Raise HTTPError for bad responses (4XX or 5XX)
+            except requests.exceptions.HTTPError as e:
+                logger.error(f"HTTP Error {response.status_code}: {response.text}")
+                if response.status_code == 400:
+                    try:
+                        error_data = response.json()
+                        logger.error(f"API Error Details: {json.dumps(error_data, indent=2)}")
+                    except json.JSONDecodeError:
+                        logger.error("Could not parse error response as JSON")
+                raise
             
             task_id = response.json()["data"]["task_id"]
 
@@ -459,21 +467,47 @@ class KlingAI_ImageToVideo(ControlNode):
             logger.info(f"Video ID: {actual_video_id}") # Added logging for actual_video_id
             return video_artifact
 
-        yield generate_video 
+        return generate_video()
 
     def after_value_set(self, parameter: Parameter, value: any, modified_parameters_set: set[str] | None = None) -> None:
         """Update parameter visibility based on model selection."""
         if parameter.name == "model_name":
-            # Show all features for all models - let API decide what's supported
-            self.show_parameter_by_name("mode")
-            self.show_parameter_by_name(["camera_control_type", "camera_config_horizontal", 
-                                        "camera_config_vertical", "camera_config_pan", 
-                                        "camera_config_tilt", "camera_config_roll", "camera_config_zoom"])
+            # Show mask features for all models
             self.show_parameter_by_name(["static_mask", "dynamic_masks"])
+            
+            # Update image_tail parameter based on model support
+            if value in ["kling-v1-6"]:
+                # Models that support end frame - show the parameter
+                self.show_parameter_by_name("image_tail")
+                image_tail_param = self.get_parameter_by_name("image_tail")
+                image_tail_param.tooltip = "Reference Image (end frame) - optional. Supported by this model. Input ImageArtifact, ImageUrlArtifact, direct URL string, or Base64 string."
+            else:
+                # Models that don't support end frame - hide the parameter
+                self.hide_parameter_by_name("image_tail")
+                image_tail_param = self.get_parameter_by_name("image_tail")
+                image_tail_param.tooltip = "Reference Image (end frame) - not supported by this model. Choose a different model to enable end frame control."
+            
+            # Model-specific UI restrictions
+            if value == "kling-v1":
+                # kling-v1: only 5s duration, std or pro mode
+                self.show_parameter_by_name("mode")
+                self.hide_parameter_by_name("duration")  # Force 5s
+                # Set duration to 5 if not already
+                current_duration = self.get_parameter_value("duration")
+                if current_duration != 5:
+                    self.set_parameter_value("duration", 5)
+            elif value in ["kling-v1-5", "kling-v1-6"]:
+                # kling-v1-5 and kling-v1-6: only pro mode, 5s or 10s duration
+                self.hide_parameter_by_name("mode")  # Force pro
+                self.show_parameter_by_name("duration")
+                # Set mode to pro if not already
+                current_mode = self.get_parameter_value("mode")
+                if current_mode != "pro":
+                    self.set_parameter_value("mode", "pro")
+            else:
+                # Other models: show all options
+                self.show_parameter_by_name(["mode", "duration"])
                 
             # Add all potentially modified parameters to the set if provided
             if modified_parameters_set is not None:
-                modified_parameters_set.update(["camera_control_type", "camera_config_horizontal", 
-                                              "camera_config_vertical", "camera_config_pan", 
-                                              "camera_config_tilt", "camera_config_roll", "camera_config_zoom",
-                                              "static_mask", "dynamic_masks"]) 
+                modified_parameters_set.update(["static_mask", "dynamic_masks", "mode", "duration", "image_tail"]) 

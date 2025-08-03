@@ -2,3 +2,4 @@
 .DS_Store
 .env.local
 /kling/__pycache__
+node-development-guide-v2.md

@@ -56,10 +56,10 @@ class KlingAI_TextToVideo(ControlNode):
                 input_types=["str"],
                 output_type="str",
                 type="str",
-                default_value="kling-v1",
+                default_value="kling-v1-6",
                 tooltip="Model Name",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["kling-v1", "kling-v1-5", "kling-v1-6", "kling-v2-master"])},
+                traits={Options(choices=["kling-v1-6", "kling-v2-master", "kling-v2-1-master"])},
             )
         )
         self.add_parameter(
@@ -112,13 +112,13 @@ class KlingAI_TextToVideo(ControlNode):
         self.add_parameter(
             Parameter(
                 name="duration",
-                input_types=["str"],
-                output_type="str",
-                type="str",
-                default_value="5",
+                input_types=["int"],
+                output_type="int",
+                type="int",
+                default_value=5,
                 tooltip="Video Length, unit: s (seconds)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["5", "10"])}
+                traits={Options(choices=[5, 10])}
             )
         )
         # Callback Parameters Group
@@ -141,76 +141,8 @@ class KlingAI_TextToVideo(ControlNode):
                 tooltip="Customized Task ID (must be unique within user account).",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
-        callback_group.ui_options = {"hide": True} # Collapse by default
+        callback_group.ui_options = {"hide": True}  # Hidden until Griptape supports callbacks
         self.add_node_element(callback_group)
-        # Camera Control Parameters Group
-        with ParameterGroup(name="Camera Controls") as camera_group:
-            Parameter(
-                name="camera_control_type",
-                input_types=["str"],
-                output_type="str",
-                type="str",
-                default_value="(Auto)",
-                tooltip="Predefined camera movement type. Select (Auto) for model default. If 'simple', ensure only one config value is non-zero.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["(Auto)", "simple", "down_back", "forward_up", "right_turn_forward", "left_turn_forward"])}
-            )
-            Parameter(
-                name="camera_config_horizontal",
-                input_types=["float"],
-                output_type="float",
-                type="float",
-                default_value=0.0,
-                tooltip="Horizontal movement (-10 to 10). Use if camera_control_type is 'simple'.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            )
-            Parameter(
-                name="camera_config_vertical",
-                input_types=["float"],
-                output_type="float",
-                type="float",
-                default_value=0.0,
-                tooltip="Vertical movement (-10 to 10). Use if camera_control_type is 'simple'.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            )
-            Parameter(
-                name="camera_config_pan",
-                input_types=["float"],
-                output_type="float",
-                type="float",
-                default_value=0.0,
-                tooltip="Pan (rotation around x-axis, -10 to 10). Use if camera_control_type is 'simple'.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            )
-            Parameter(
-                name="camera_config_tilt",
-                input_types=["float"],
-                output_type="float",
-                type="float",
-                default_value=0.0,
-                tooltip="Tilt (rotation around y-axis, -10 to 10). Use if camera_control_type is 'simple'.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            )
-            Parameter(
-                name="camera_config_roll",
-                input_types=["float"],
-                output_type="float",
-                type="float",
-                default_value=0.0,
-                tooltip="Roll (rotation around z-axis, -10 to 10). Use if camera_control_type is 'simple'.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            )
-            Parameter(
-                name="camera_config_zoom",
-                input_types=["float"],
-                output_type="float",
-                type="float",
-                default_value=0.0,
-                tooltip="Zoom (-10 to 10). Use if camera_control_type is 'simple'.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            )
-        camera_group.ui_options = {"hide": True} # Collapse by default
-        self.add_node_element(camera_group)
         self.add_parameter(
             Parameter(
                 name="video_url",
@@ -251,39 +183,28 @@ class KlingAI_TextToVideo(ControlNode):
                 ValueError(f"Kling secret key not found. Please set the {SECRET_KEY_ENV_VAR} environment variable.")
             )
 
-        # Model-specific validation based on capability matrix
-        model = self.get_parameter_value("model_name")
-        mode = self.get_parameter_value("mode")
-        camera_control = self.get_parameter_value("camera_control_type")
-        
-        # V1-5 text-to-video restriction  
-        if model == "kling-v1-5":
-            errors.append(ValueError("kling-v1-5 does not support text-to-video generation. Use image-to-video instead."))
+        # Negative prompt length validation
+        negative_prompt = self.get_parameter_value("negative_prompt")
+        if negative_prompt and len(negative_prompt) > 2500:
+            errors.append(ValueError("negative_prompt exceeds 2500 characters (limit: 2500)."))
 
         return errors if errors else None
 
     def after_value_set(self, parameter: Parameter, value: any, modified_parameters_set: set[str] | None = None) -> None:
         """Update parameter visibility based on model selection."""
         if parameter.name == "model_name":
-            # Only hide features for v1-5 since it doesn't support text-to-video at all
-            if value == "kling-v1-5":
-                # Hide camera controls for v1-5 since it doesn't support text-to-video
-                self.hide_parameter_by_name(["camera_control_type", "camera_config_horizontal", 
-                                            "camera_config_vertical", "camera_config_pan", 
-                                            "camera_config_tilt", "camera_config_roll", "camera_config_zoom"])
-            else:
-                # Show all features for other models - let API decide what's supported
-                self.show_parameter_by_name(["camera_control_type", "camera_config_horizontal", 
-                                            "camera_config_vertical", "camera_config_pan", 
-                                            "camera_config_tilt", "camera_config_roll", "camera_config_zoom"])
+            # All current models (kling-v1-6, kling-v2-master, kling-v2-1-master) support all options
+            # Show all parameters for these models
+            self.show_parameter_by_name(["mode", "duration"])
                 
             # Add all potentially modified parameters to the set if provided
             if modified_parameters_set is not None:
-                modified_parameters_set.update(["camera_control_type", "camera_config_horizontal", 
-                                              "camera_config_vertical", "camera_config_pan", 
-                                              "camera_config_tilt", "camera_config_roll", "camera_config_zoom"])
+                modified_parameters_set.update(["mode", "duration"])
 
-    def process(self) -> AsyncResult:
+    def process(self) -> AsyncResult[None]:
+        yield lambda: self._process()
+    
+    def _process(self):
         prompt = self.get_parameter_value("prompt")
 
         def generate_video() -> TextArtifact:
@@ -315,27 +236,8 @@ class KlingAI_TextToVideo(ControlNode):
             if external_task_id_val:
                 payload["external_task_id"] = external_task_id_val
 
-            camera_control_type_val = self.get_parameter_value("camera_control_type")
-            if camera_control_type_val and camera_control_type_val != "(Auto)":
-                cc_payload = {"type": camera_control_type_val}
-                if camera_control_type_val == "simple":
-                    simple_config = {}
-                    cam_h = self.get_parameter_value("camera_config_horizontal")
-                    if cam_h != 0.0: simple_config["horizontal"] = cam_h
-                    cam_v = self.get_parameter_value("camera_config_vertical")
-                    if cam_v != 0.0: simple_config["vertical"] = cam_v
-                    cam_p = self.get_parameter_value("camera_config_pan")
-                    if cam_p != 0.0: simple_config["pan"] = cam_p
-                    cam_t = self.get_parameter_value("camera_config_tilt")
-                    if cam_t != 0.0: simple_config["tilt"] = cam_t
-                    cam_r = self.get_parameter_value("camera_config_roll")
-                    if cam_r != 0.0: simple_config["roll"] = cam_r
-                    cam_z = self.get_parameter_value("camera_config_zoom")
-                    if cam_z != 0.0: simple_config["zoom"] = cam_z
-                    cc_payload["config"] = simple_config
-                else:
-                    cc_payload["config"] = None
-                payload["camera_control"] = cc_payload
+            # Remove empty values to comply with Kling API spec
+            payload = {k: v for k, v in payload.items() if v not in (None, "", {}, [])}
             
             logger.info(f"Kling Text-to-Video API Request Payload: {json.dumps(payload, indent=2)}")
             response = requests.post(BASE_URL, headers=headers, json=payload)  # noqa: S113 Collin is this ok to ignore?
@@ -418,4 +320,4 @@ class KlingAI_TextToVideo(ControlNode):
             logger.info(f"Video ID: {actual_video_id}")
             return VideoUrlArtifact(video_url)
 
-        yield generate_video 
+        return generate_video()
