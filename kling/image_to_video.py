@@ -52,7 +52,7 @@ class KlingAI_ImageToVideo(ControlNode):
                 default_value="kling-v2-1-master",
                 tooltip="Model Name for generation.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["kling-v1", "kling-v1-5", "kling-v1-6", "kling-v2-master", "kling-v2-1", "kling-v2-1-master"])},
+                traits={Options(choices=["kling-v1", "kling-v1-5", "kling-v2-master", "kling-v2-1", "kling-v2-1-master"])},
                 ui_options={"display_name": "Model"}
             )
         )
@@ -67,16 +67,9 @@ class KlingAI_ImageToVideo(ControlNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "Start Frame"}
             )
-            Parameter(
-                name="image_tail",
-                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
-                type="ImageArtifact",
-                default_value=None,
-                tooltip="Reference Image (end frame) - optional. Only supported by certain models. Input ImageArtifact, ImageUrlArtifact, direct URL string, or Base64 string.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "End Frame", "hide": True}  # Start hidden, will be shown for supported models 
-            )
         self.add_node_element(image_group)
+        
+
 
         # Prompts Group
         with ParameterGroup(name="Prompts") as prompts_group:
@@ -264,9 +257,8 @@ class KlingAI_ImageToVideo(ControlNode):
 
         # Validate images
         image_val = self._get_image_api_data("image")
-        image_tail_val = self._get_image_api_data("image_tail")
         
-        logger.info(f"KlingAI_ImageToVideo validate_node: image present: {bool(image_val)}, image_tail present: {bool(image_tail_val)}")
+        logger.info(f"KlingAI_ImageToVideo validate_node: image present: {bool(image_val)}")
         
         if not image_val:
             errors.append(ValueError("Start frame image must be provided."))
@@ -279,7 +271,7 @@ class KlingAI_ImageToVideo(ControlNode):
         # Only validate if somehow invalid combinations slip through UI
         if model == "kling-v1" and duration != 5:
             errors.append(ValueError("kling-v1 only supports 5s duration"))
-        if model in ["kling-v1-5", "kling-v1-6"] and mode != "pro":
+        if model in ["kling-v1-5"] and mode != "pro":
             errors.append(ValueError(f"{model} only supports pro mode"))
 
         cfg_scale_val = self.get_parameter_value("cfg_scale")
@@ -328,9 +320,8 @@ class KlingAI_ImageToVideo(ControlNode):
             }
 
             image_api = self._get_image_api_data("image")
-            image_tail_api = self._get_image_api_data("image_tail")
             
-            logger.info(f"DEBUG: Image data - image_api present: {bool(image_api)}, image_tail_api present: {bool(image_tail_api)}")
+            logger.info(f"DEBUG: Image data - image_api present: {bool(image_api)}")
             if image_api:
                 logger.info(f"DEBUG: image_api length: {len(image_api) if image_api else 0}")
                 # Check if it's a URL or Base64
@@ -339,18 +330,6 @@ class KlingAI_ImageToVideo(ControlNode):
                 else:
                     logger.info(f"DEBUG: image_api is Base64 data (length: {len(image_api)})")
                 payload["image"] = image_api
-            if image_tail_api:
-                # Check if model supports image_tail before adding to payload
-                model = self.get_parameter_value("model_name")
-                if model in ["kling-v1-6"]:  # Only certain models support end frame
-                    logger.info(f"DEBUG: image_tail_api length: {len(image_tail_api) if image_tail_api else 0}")
-                    if image_tail_api.startswith(('http://', 'https://')):
-                        logger.info(f"DEBUG: image_tail_api is URL: {image_tail_api}")
-                    else:
-                        logger.info(f"DEBUG: image_tail_api is Base64 data (length: {len(image_tail_api)})")
-                    payload["image_tail"] = image_tail_api
-                else:
-                    logger.warning(f"DEBUG: Model {model} doesn't support end frame - ignoring image_tail")
 
             prompt_val = self.get_parameter_value("prompt")
             neg_prompt_val = self.get_parameter_value("negative_prompt")
@@ -386,8 +365,6 @@ class KlingAI_ImageToVideo(ControlNode):
             log_payload = payload.copy()
             if "image" in log_payload and not log_payload["image"].startswith(('http://', 'https://')):
                 log_payload["image"] = f"<BASE64_DATA_LENGTH:{len(log_payload['image'])}>"
-            if "image_tail" in log_payload and not log_payload["image_tail"].startswith(('http://', 'https://')):
-                log_payload["image_tail"] = f"<BASE64_DATA_LENGTH:{len(log_payload['image_tail'])}>"
             if "static_mask" in log_payload and not log_payload["static_mask"].startswith(('http://', 'https://')):
                 log_payload["static_mask"] = f"<BASE64_DATA_LENGTH:{len(log_payload['static_mask'])}>"
             
@@ -475,39 +452,25 @@ class KlingAI_ImageToVideo(ControlNode):
             # Show mask features for all models
             self.show_parameter_by_name(["static_mask", "dynamic_masks"])
             
-            # Update image_tail parameter based on model support
-            if value in ["kling-v1-6"]:
-                # Models that support end frame - show the parameter
-                self.show_parameter_by_name("image_tail")
-                image_tail_param = self.get_parameter_by_name("image_tail")
-                image_tail_param.tooltip = "Reference Image (end frame) - optional. Supported by this model. Input ImageArtifact, ImageUrlArtifact, direct URL string, or Base64 string."
-            else:
-                # Models that don't support end frame - hide the parameter
-                self.hide_parameter_by_name("image_tail")
-                image_tail_param = self.get_parameter_by_name("image_tail")
-                image_tail_param.tooltip = "Reference Image (end frame) - not supported by this model. Choose a different model to enable end frame control."
-            
             # Model-specific UI restrictions
             if value == "kling-v1":
                 # kling-v1: only 5s duration, std or pro mode
                 self.show_parameter_by_name("mode")
-                self.hide_parameter_by_name("duration")  # Force 5s
-                # Set duration to 5 if not already
+                self.hide_parameter_by_name("duration")
                 current_duration = self.get_parameter_value("duration")
                 if current_duration != 5:
                     self.set_parameter_value("duration", 5)
-            elif value in ["kling-v1-5", "kling-v1-6"]:
-                # kling-v1-5 and kling-v1-6: only pro mode, 5s or 10s duration
-                self.hide_parameter_by_name("mode")  # Force pro
+            elif value in ["kling-v1-5"]:
+                # kling-v1-5: only pro mode, either duration
+                self.hide_parameter_by_name("mode")
                 self.show_parameter_by_name("duration")
-                # Set mode to pro if not already
                 current_mode = self.get_parameter_value("mode")
                 if current_mode != "pro":
                     self.set_parameter_value("mode", "pro")
             else:
-                # Other models: show all options
+                # kling-v2+: all modes and durations available
                 self.show_parameter_by_name(["mode", "duration"])
                 
             # Add all potentially modified parameters to the set if provided
             if modified_parameters_set is not None:
-                modified_parameters_set.update(["static_mask", "dynamic_masks", "mode", "duration", "image_tail"]) 
+                modified_parameters_set.update(["static_mask", "dynamic_masks", "mode", "duration"]) 

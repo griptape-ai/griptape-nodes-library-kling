@@ -9,6 +9,7 @@ from griptape_nodes.traits.options import Options
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterGroup
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes.traits.file_system_picker import FileSystemPicker
 
 SERVICE = "Kling"
 API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
@@ -41,8 +42,23 @@ class KlingAI_LipSync(ControlNode):
         self.category = "AI/Kling"
         self.description = "Creates lip-sync videos by synchronizing speech to video using Kling AI. Supports both Kling AI generated videos (via video ID) and uploaded videos (via video URL)."
 
-        # Basic Settings Group
-        with ParameterGroup(name="Video Input") as video_group:
+        # Model Selection
+        self.add_parameter(
+            Parameter(
+                name="model_name",
+                input_types=["str"],
+                output_type="str",
+                type="str",
+                default_value="kling-v2-1",
+                tooltip="Model for lip sync generation.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=["kling-v1-5", "kling-v1-6", "kling-v2", "kling-v2-1"])},
+                ui_options={"display_name": "Model"}
+            )
+        )
+
+        # Video Input Parameters
+        self.add_parameter(
             Parameter(
                 name="video_input_type",
                 input_types=["str"],
@@ -52,7 +68,10 @@ class KlingAI_LipSync(ControlNode):
                 tooltip="Video input type: 'video_id' for Kling AI generated videos or 'video_url' for uploaded videos.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["video_id", "video_url"])},
+                ui_options={"display_name": "Video Input Type"}
             )
+        )
+        self.add_parameter(
             Parameter(
                 name="video_id",
                 input_types=["str"],
@@ -62,6 +81,8 @@ class KlingAI_LipSync(ControlNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"placeholder_text": "Enter video ID from previous Kling generation..."},
             )
+        )
+        self.add_parameter(
             Parameter(
                 name="video_url",
                 input_types=["VideoUrlArtifact", "BlobArtifact", "VideoArtifact", "str"],
@@ -71,85 +92,141 @@ class KlingAI_LipSync(ControlNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"placeholder_text": "Upload video file or enter URL..."},
             )
-        video_group.ui_options = {"hide": False}
-        self.add_node_element(video_group)
+        )
 
-        # Set initial parameter visibility based on default video_input_type
+        # Set initial parameter visibility based on defaults
         self.hide_parameter_by_name("video_url")  # Hide video_url since default is "video_id"
+        # Hide audio parameters since default mode is "text2video"
+        self.hide_parameter_by_name(["audio_type", "audio_file", "audio_url"])
+        # Hide audio_url since default audio_type is "file" but audio mode is hidden initially
+        self.hide_parameter_by_name("audio_url")
 
-        # Voice Settings Group
-        with ParameterGroup(name="Voice Settings") as voice_group:
+        # Mode Selection
+        self.add_parameter(
             Parameter(
-                name="voice_type",
+                name="mode",
                 input_types=["str"],
                 output_type="str",
                 type="str",
-                default_value="text",
-                tooltip="Voice input type: 'text' for text-to-speech or 'audio' for audio file.",
+                default_value="text2video",
+                tooltip="Lip-sync generation mode: 'text2video' for text-to-speech or 'audio2video' for audio file input.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["text", "audio"])},
+                traits={Options(choices=["text2video", "audio2video"])},
+                ui_options={"display_name": "Mode"}
             )
+        )
+
+        # Text-to-Speech Parameters (for text2video mode)
+        self.add_parameter(
             Parameter(
-                name="voice_text",
+                name="text",
                 input_types=["str"],
                 output_type="str",
                 type="str",
                 default_value="",
-                tooltip="Text to convert to speech (used when voice_type is 'text').",
+                tooltip="Text content for lip-sync video generation (required for text2video mode). Maximum 120 characters.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"multiline": True, "placeholder_text": "Enter text to be spoken..."},
+                ui_options={"multiline": True, "placeholder_text": "Enter text to be spoken (max 120 chars)..."}
             )
+        )
+        self.add_parameter(
             Parameter(
-                name="voice_audio_url",
+                name="voice_id",
                 input_types=["str"],
                 output_type="str",
                 type="str",
-                default_value="",
-                tooltip="URL to audio file (used when voice_type is 'audio').",
+                default_value="oversea_male1 (en)",
+                tooltip="Voice selection for text-to-speech (required for text2video mode).",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"placeholder_text": "https://example.com/audio.mp3"},
+                traits={Options(choices=[
+                    # English voices first (alphabetical)
+                    "ai_chenjiahao_712 (en)", "ai_huangzhong_712 (en)", "ai_huangyaoshi_712 (en)", 
+                    "ai_kaiya (en)", "ai_laoguowang_712 (en)", "ai_shatang (en)", "AOT (en)", 
+                    "calm_story1 (en)", "cartoon-boy-07 (en)", "cartoon-girl-01 (en)", 
+                    "chat1_female_new-3 (en)", "chat_0407_5-1 (en)", "chengshu_jiejie (en)", 
+                    "commercial_lady_en_f-v1 (en)", "genshin_klee2 (en)", "genshin_kirara (en)", 
+                    "genshin_vindi2 (en)", "girlfriend_4_speech02 (en)", "heainainai_speech02 (en)", 
+                    "laopopo_speech02 (en)", "oversea_male1 (en)", "PeppaPig_platform (en)", 
+                    "reader_en_m-v1 (en)", "uk_boy1 (en)", "uk_man2 (en)", "you_pingjing (en)", 
+                    "zhinen_xuesheng (en)",
+                    # Chinese voices (alphabetical)
+                    "ai_chenjiahao_712 (zh)", "ai_huangyaoshi_712 (zh)", "ai_kaiya (zh)", 
+                    "ai_laoguowang_712 (zh)", "ai_shatang (zh)", "ai_taiwan_man2_speech02 (zh)", 
+                    "cartoon-boy-07 (zh)", "cartoon-girl-01 (zh)", "chaoshandashu_speech02 (zh)", 
+                    "chat1_female_new-3 (zh)", "chengshu_jiejie (zh)", "chongqingxiaohuo_speech02 (zh)", 
+                    "chuanmeizi_speech02 (zh)", "daopianyansang-v1 (zh)", "diyinnansang_DB_CN_M_04-v2 (zh)", 
+                    "dongbeilaotie_speech02 (zh)", "genshin_klee2 (zh)", "genshin_kirara (zh)", 
+                    "genshin_vindi2 (zh)", "girlfriend_1_speech02 (zh)", "girlfriend_2_speech02 (zh)", 
+                    "guanxiaofang-v2 (zh)", "heainainai_speech02 (zh)", "laopopo_speech02 (zh)", 
+                    "mengwa-v1 (zh)", "tianmeixuemei-v1 (zh)", "tianjinjiejie_speech02 (zh)", 
+                    "tiexin_nanyou (zh)", "tiyuxi_xuedi (zh)", "uk_oldman3 (zh)", 
+                    "xianzhanggui_speech02 (zh)", "yizhipiannan-v1 (zh)", "you_pingjing (zh)", 
+                    "zhinen_xuesheng (zh)", "zhuxi_speech02 (zh)"
+                ])},
+                ui_options={"display_name": "Voice"}
             )
-        voice_group.ui_options = {"hide": False}
-        self.add_node_element(voice_group)
-
-        # Set initial parameter visibility based on default voice_type
-        self.hide_parameter_by_name("voice_audio_url")  # Hide audio URL since default is "text"
-
-        # TTS Settings Group (for text-to-speech)
-        with ParameterGroup(name="Text-to-Speech Settings") as tts_group:
-            Parameter(
-                name="voice_speaker",
-                input_types=["str"],
-                output_type="str",
-                type="str",
-                default_value="ai_shatang",
-                tooltip="TTS voice speaker (used when voice_type is 'text').",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["ai_shatang", "ai_kaiya", "ai_chenjiahao_712", "ai_huangzhong_712", "ai_huangyaoshi_712", "ai_laoguowang_712", "uk_boy1", "uk_man2", "uk_oldman3", "oversea_male1", "commercial_lady_en_f-v1", "reader_en_m-v1"])},
-            )
+        )
+        self.add_parameter(
             Parameter(
                 name="voice_speed",
                 input_types=["float"],
                 output_type="float",
                 type="float",
                 default_value=1.0,
-                tooltip="Speech speed multiplier (0.5-2.0). 1.0 = normal speed.",
+                tooltip="Speech rate (0.8-2.0). Valid range: 0.8-2.0, accurate to one decimal place.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"slider": {"min_val": 0.8, "max_val": 2.0, "step": 0.1}}
             )
-            Parameter(
-                name="voice_volume",
-                input_types=["float"],
-                output_type="float",
-                type="float",
-                default_value=1.0,
-                tooltip="Speech volume multiplier (0.1-2.0). 1.0 = normal volume.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            )
-        tts_group.ui_options = {"hide": False}
-        self.add_node_element(tts_group)
+        )
 
-        # Callback Parameters Group
-        with ParameterGroup(name="Callback") as callback_group:
+        # Audio Parameters (for audio2video mode)
+        self.add_parameter(
+            Parameter(
+                name="audio_type",
+                input_types=["str"],
+                output_type="str",
+                type="str",
+                default_value="file",
+                tooltip="Method of transmitting audio files for lip-sync video generation by audio file (required for audio2video mode).",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=["file", "url"])},
+                ui_options={"display_name": "Audio Type"}
+            )
+        )
+        
+        # Audio file picker parameter
+        audio_file = Parameter(
+            name="audio_file",
+            type="str",
+            default_value="",
+            tooltip="Select an audio file from your local filesystem (required when audio_type is 'file'). Supported formats: .mp3/.wav/.m4a/.aac, max 5MB.",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            ui_options={"clickable_file_browser": True, "display_name": "Audio File"}
+        )
+        audio_file.add_trait(FileSystemPicker(
+            allow_files=True,
+            allow_directories=False,
+            file_extensions=[".mp3", ".wav", ".m4a", ".aac"],
+            max_file_size=5242880,  # 5MB in bytes
+            workspace_only=True
+        ))
+        self.add_parameter(audio_file)
+        
+        self.add_parameter(
+            Parameter(
+                name="audio_url",
+                input_types=["str"],
+                output_type="str",
+                type="str",
+                default_value="",
+                tooltip="Audio file download URL (required when audio_type is 'url'). Supported formats: .mp3/.wav/.m4a/.aac, max 5MB.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"placeholder_text": "https://example.com/audio.mp3"}
+            )
+        )
+
+        # Callback Parameter
+        self.add_parameter(
             Parameter(
                 name="callback_url",
                 input_types=["str"],
@@ -158,9 +235,9 @@ class KlingAI_LipSync(ControlNode):
                 default_value="",
                 tooltip="Callback notification address for task status changes.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"hide": True}
             )
-        callback_group.ui_options = {"hide": True}
-        self.add_node_element(callback_group)
+        )
 
         # Output Parameters
         self.add_parameter(
@@ -208,25 +285,34 @@ class KlingAI_LipSync(ControlNode):
             if not video_url:
                 errors.append(ValueError("Video URL or file is required when using video_url input type."))
 
-        # Validate voice settings based on type
-        voice_type = self.get_parameter_value("voice_type")
-        if voice_type == "text":
-            voice_text = self.get_parameter_value("voice_text")
-            if not voice_text or not voice_text.strip():
-                errors.append(ValueError("Voice text is required when voice_type is 'text'."))
-        elif voice_type == "audio":
-            voice_audio_url = self.get_parameter_value("voice_audio_url")
-            if not voice_audio_url or not voice_audio_url.strip():
-                errors.append(ValueError("Voice audio URL is required when voice_type is 'audio'."))
+        # Validate mode-specific parameters
+        mode = self.get_parameter_value("mode")
+        if mode == "text2video":
+            text = self.get_parameter_value("text")
+            if not text or not text.strip():
+                errors.append(ValueError("Text is required when mode is 'text2video'."))
+            elif len(text.strip()) > 120:
+                errors.append(ValueError("Text content cannot exceed 120 characters."))
+                
+            voice_id = self.get_parameter_value("voice_id")
+            if not voice_id or not voice_id.strip():
+                errors.append(ValueError("Voice ID is required when mode is 'text2video'."))
+                
+        elif mode == "audio2video":
+            audio_type = self.get_parameter_value("audio_type")
+            if audio_type == "file":
+                audio_file = self.get_parameter_value("audio_file")
+                if not audio_file:
+                    errors.append(ValueError("Audio file is required when audio_type is 'file'."))
+            elif audio_type == "url":
+                audio_url = self.get_parameter_value("audio_url")
+                if not audio_url or not audio_url.strip():
+                    errors.append(ValueError("Audio URL is required when audio_type is 'url'."))
 
-        # Validate TTS parameters
+        # Validate voice speed range
         voice_speed = self.get_parameter_value("voice_speed")
-        if not (0.5 <= voice_speed <= 2.0):
-            errors.append(ValueError("Voice speed must be between 0.5 and 2.0."))
-
-        voice_volume = self.get_parameter_value("voice_volume")
-        if not (0.1 <= voice_volume <= 2.0):
-            errors.append(ValueError("Voice volume must be between 0.1 and 2.0."))
+        if not (0.8 <= voice_speed <= 2.0):
+            errors.append(ValueError("Voice speed must be between 0.8 and 2.0."))
 
         return errors if errors else None
 
@@ -245,21 +331,37 @@ class KlingAI_LipSync(ControlNode):
             if modified_parameters_set is not None:
                 modified_parameters_set.update(["video_id", "video_url"])
             
-        elif parameter.name == "voice_type":
-            if value == "text":
-                # Show text input and TTS settings, hide audio URL
-                self.show_parameter_by_name(["voice_text", "voice_speaker", "voice_speed", "voice_volume"])
-                self.hide_parameter_by_name("voice_audio_url")
-            elif value == "audio":
-                # Show audio URL, hide text input and TTS settings
-                self.show_parameter_by_name("voice_audio_url")
-                self.hide_parameter_by_name(["voice_text", "voice_speaker", "voice_speed", "voice_volume"])
+        elif parameter.name == "mode":
+            if value == "text2video":
+                # Show text-to-speech parameters, hide audio parameters
+                self.show_parameter_by_name(["text", "voice_id", "voice_speed"])
+                self.hide_parameter_by_name(["audio_type", "audio_file", "audio_url"])
+            elif value == "audio2video":
+                # Show audio parameters, hide text-to-speech parameters
+                self.show_parameter_by_name(["audio_type", "audio_file", "audio_url"])
+                self.hide_parameter_by_name(["text", "voice_id", "voice_speed"])
                 
             if modified_parameters_set is not None:
-                modified_parameters_set.update(["voice_text", "voice_audio_url", "voice_speaker", "voice_speed", "voice_volume"])
+                modified_parameters_set.update(["text", "voice_id", "voice_speed", "audio_type", "audio_file", "audio_url"])
+                
+        elif parameter.name == "audio_type":
+            if value == "file":
+                # Show audio file input, hide audio URL
+                self.show_parameter_by_name("audio_file")
+                self.hide_parameter_by_name("audio_url")
+            elif value == "url":
+                # Show audio URL input, hide audio file
+                self.show_parameter_by_name("audio_url")
+                self.hide_parameter_by_name("audio_file")
+                
+            if modified_parameters_set is not None:
+                modified_parameters_set.update(["audio_file", "audio_url"])
 
-    def process(self) -> AsyncResult:
-        # Validate before yielding
+    def process(self) -> AsyncResult[None]:
+        yield lambda: self._process()
+        
+    def _process(self):
+        # Validate before processing
         validation_errors = self.validate_node()
         if validation_errors:
             error_message = "; ".join(str(e) for e in validation_errors)
@@ -271,25 +373,45 @@ class KlingAI_LipSync(ControlNode):
             jwt_token = encode_jwt_token(access_key, secret_key)
             headers = {"Content-Type": "application/json", "Authorization": f"Bearer {jwt_token}"}
 
-            voice_type = self.get_parameter_value("voice_type")
+            # Build input object for new API structure
+            input_obj = {
+                "model_name": self.get_parameter_value("model_name"),
+                "mode": self.get_parameter_value("mode")
+            }
+            
+            mode = self.get_parameter_value("mode")
 
-            # Build nested input object based on voice type
-            if voice_type == "text":
-                input_obj = {
-                    "mode": "text2video",
-                    "text": self.get_parameter_value("voice_text").strip(),
-                    "voice_id": self.get_parameter_value("voice_speaker"),
-                    "voice_language": "en",
+            # Add mode-specific parameters
+            if mode == "text2video":
+                # Parse voice_id which includes language in format "voice_id (lang)"
+                voice_selection = self.get_parameter_value("voice_id").strip()
+                if " (" in voice_selection and voice_selection.endswith(")"):
+                    voice_id = voice_selection.split(" (")[0]
+                    voice_language = voice_selection.split(" (")[1][:-1]  # Remove closing parenthesis
+                else:
+                    # Fallback if format is unexpected
+                    voice_id = voice_selection
+                    voice_language = "en"
+                    
+                input_obj.update({
+                    "text": self.get_parameter_value("text").strip(),
+                    "voice_id": voice_id,
+                    "voice_language": voice_language,
                     "voice_speed": self.get_parameter_value("voice_speed")
-                }
-            elif voice_type == "audio":
-                input_obj = {
-                    "mode": "audio2video",
-                    "audio_type": "url",
-                    "audio_url": self.get_parameter_value("voice_audio_url").strip()
-                }
+                })
+            elif mode == "audio2video":
+                audio_type = self.get_parameter_value("audio_type")
+                input_obj["audio_type"] = audio_type
+                
+                if audio_type == "file":
+                    audio_file = self.get_parameter_value("audio_file")
+                    # Handle file upload - for now use placeholder
+                    # In production, you'd upload the file and get a URL
+                    input_obj["audio_file"] = str(audio_file)  # Simplified for now
+                elif audio_type == "url":
+                    input_obj["audio_url"] = self.get_parameter_value("audio_url").strip()
             else:
-                raise ValueError(f"Unknown voice type: {voice_type}")
+                raise ValueError(f"Unknown mode: {mode}")
 
             # Build payload based on video input type
             video_input_type = self.get_parameter_value("video_input_type")
@@ -326,10 +448,11 @@ class KlingAI_LipSync(ControlNode):
                 logger.info(f"Final video_url in input object: {input_obj['video_url']}")
             else:
                 raise ValueError(f"Unknown video input type: {video_input_type}")
-            
-            payload = {"input": input_obj}
 
-            # Add callback parameters
+            # Create final payload with input wrapper
+            payload = {"input": input_obj}
+            
+            # Add callback parameters outside of input
             callback_url = self.get_parameter_value("callback_url")
             if callback_url and callback_url.strip():
                 payload["callback_url"] = callback_url.strip()
@@ -381,14 +504,22 @@ class KlingAI_LipSync(ControlNode):
                         video_artifact = VideoUrlArtifact(url=video_url)
                         self.publish_update_to_parameter("lip_sync_video_url", video_artifact)
                         if actual_video_id:
-                            self.publish_update_to_parameter("video_id", actual_video_id)
+                            self.publish_update_to_parameter("task_id", actual_video_id)
                         
                         return video_artifact
                         
                     if status == "failed":
                         error_msg = result["data"].get("task_status_msg", "Unknown error")
                         logger.error(f"Kling lip-sync failed: {error_msg}")
-                        raise RuntimeError(f"Kling lip-sync failed: {error_msg}")
+                        
+                        # Publish error message to output instead of crashing the node
+                        error_artifact = VideoUrlArtifact(url="")
+                        error_artifact.name = f"Lip-sync failed: {error_msg}"
+                        self.publish_update_to_parameter("lip_sync_video_url", error_artifact)
+                        self.publish_update_to_parameter("task_id", f"FAILED: {error_msg}")
+                        
+                        logger.info(f"Lip-sync task failed gracefully with message: {error_msg}")
+                        return error_artifact
 
                 except requests.exceptions.RequestException as e:
                     logger.warning(f"Polling request failed (Attempt {attempt + 1}/{max_retries}): {e}")
@@ -397,4 +528,4 @@ class KlingAI_LipSync(ControlNode):
 
             raise RuntimeError("Kling lip-sync task timed out.")
 
-        yield create_lip_sync 
+        return create_lip_sync() 
