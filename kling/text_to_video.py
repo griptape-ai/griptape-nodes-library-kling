@@ -259,7 +259,7 @@ class KlingAI_TextToVideo(ControlNode):
             video_url = None
             actual_video_id = None # Initialize variable to store the actual video ID
 
-            max_retries = 60  # 60 retries * 5 seconds = 5 minutes timeout
+            max_retries = 120  # 120 retries * 5 seconds = 10 minutes timeout
             retry_count = 0
             
             while retry_count < max_retries:

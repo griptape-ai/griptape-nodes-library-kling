@@ -395,7 +395,7 @@ class KlingAI_ImageToVideo(ControlNode):
             actual_video_id = None # Initialize variable to store the actual video ID
 
             # Polling logic copied from KlingAI_TextToVideo
-            max_retries = 60  # e.g., 60 retries * 5 seconds = 5 minutes timeout
+            max_retries = 120  # e.g., 120 retries * 5 seconds = 10 minutes timeout
             retry_delay = 5  # seconds
             for attempt in range(max_retries):
                 try:

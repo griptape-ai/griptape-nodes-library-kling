@@ -190,7 +190,7 @@ class KlingAI_VideoExtension(ControlNode):
             poll_url = f"{BASE_URL}/{task_id}"
             
             # Polling for completion
-            max_retries = 80  # Video extension may take longer - up to 7 minutes
+            max_retries = 120  # Video extension may take longer - up to 10 minutes
             retry_delay = 5
             
             for attempt in range(max_retries):
