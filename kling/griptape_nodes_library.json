@@ -33,11 +33,11 @@
     },
     "categories": [
         {
-            "Kling AI": {
-                "color": "border-green-500",
+            "video/kling ai": {
+                "color": "border-pink-500",
                 "title": "Kling AI",
                 "description": "Nodes using the Kling AI API.",
-                "icon": "Camera"
+                "icon": "Video"
             }
         }
     ],
@@ -46,7 +46,7 @@
             "class_name": "KlingAI_TextToVideo",
             "file_path": "text_to_video.py",
             "metadata": {
-                "category": "Kling AI",
+                "category": "video/kling ai",
                 "description": "Generates a short video from a text prompt using the Kling AI text-to-video API.",
                 "display_name": "Kling Text-to-Video"
             }
@@ -55,7 +55,7 @@
             "class_name": "KlingAI_ImageToVideo",
             "file_path": "image_to_video.py",
             "metadata": {
-                "category": "Kling AI",
+                "category": "video/kling ai",
                 "description": "Generates a video from an image using the Kling AI API.",
                 "display_name": "Kling Image-to-Video"
             }
@@ -64,7 +64,7 @@
             "class_name": "KlingAI_VideoExtension",
             "file_path": "video_extension.py",
             "metadata": {
-                "category": "Kling AI",
+                "category": "video/kling ai",
                 "description": "Extends existing videos by 4-5 seconds using Kling AI (V1.5 only). Max total: 3 minutes.",
                 "display_name": "Kling Video Extension"
             }
@@ -73,7 +73,7 @@
             "class_name": "KlingAI_LipSync",
             "file_path": "lip_sync.py",
             "metadata": {
-                "category": "Kling AI",
+                "category": "video/kling ai",
                 "description": "Creates lip-sync videos by synchronizing speech to video using Kling AI.",
                 "display_name": "Kling Lip-Sync"
             }
