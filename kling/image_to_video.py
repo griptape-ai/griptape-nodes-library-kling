@@ -13,7 +13,7 @@ from griptape_nodes.retained_mode.griptape_nodes import logger
 SERVICE = "Kling"
 API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
 SECRET_KEY_ENV_VAR = "KLING_SECRET_KEY"  # noqa: S105
-BASE_URL = "https://api-singapore.klingai.com/v1/videos/image2video" # Adjusted for image-to-video
+BASE_URL = "https://api.klingai.com/v1/videos/image2video" # Global endpoint per latest docs
 
 
 class VideoUrlArtifact(UrlArtifact):
@@ -49,7 +49,7 @@ class KlingAI_ImageToVideo(ControlNode):
                 input_types=["str"],
                 output_type="str",
                 type="str",
-                default_value="kling-v2-1-master",
+                default_value="kling-v2-1",
                 tooltip="Model Name for generation.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["kling-v1", "kling-v1-5", "kling-v2-master", "kling-v2-1", "kling-v2-1-master"])},
@@ -66,6 +66,14 @@ class KlingAI_ImageToVideo(ControlNode):
                 tooltip="Reference Image (start frame) - required. Input ImageArtifact, ImageUrlArtifact, direct URL string, or Base64 string.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "Start Frame"}
+            )
+            Parameter(
+                name="image_tail",
+                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
+                type="ImageArtifact",
+                tooltip="Tail/End Frame image (optional). Supported on kling-v2-1 with pro mode (5s/10s). Accepts ImageArtifact, ImageUrlArtifact, URL, or Base64.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "Tail Frame"}
             )
         self.add_node_element(image_group)
         
@@ -111,8 +119,8 @@ class KlingAI_ImageToVideo(ControlNode):
                 input_types=["str"],
                 output_type="str",
                 type="str",
-                default_value="std",
-                tooltip="Video generation mode (std: Standard, pro: Professional).",
+                default_value="pro",
+                tooltip="Video generation mode (std: Standard, pro: Professional). Start/End frame requires pro on kling-v2-1.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["std", "pro"])}
             )
@@ -285,6 +293,16 @@ class KlingAI_ImageToVideo(ControlNode):
             except json.JSONDecodeError:
                 errors.append(ValueError("Dynamic Masks 'dynamic_masks' is not a valid JSON string."))
 
+        # Enforce end-frame support rules per v2.1 docs
+        image_tail_val = self._get_image_api_data("image_tail")
+        if image_tail_val:
+            if model != "kling-v2-1" or mode != "pro" or duration not in [5, 10]:
+                errors.append(
+                    ValueError(
+                        "image_tail is only supported on model kling-v2-1 with mode=pro and duration 5 or 10."
+                    )
+                )
+
         return errors if errors else None
 
     def process(self) -> AsyncResult[None]:
@@ -331,6 +349,16 @@ class KlingAI_ImageToVideo(ControlNode):
                     logger.info(f"DEBUG: image_api is Base64 data (length: {len(image_api)})")
                 payload["image"] = image_api
 
+            image_tail_api = self._get_image_api_data("image_tail")
+            logger.info(f"DEBUG: Image data - image_tail_api present: {bool(image_tail_api)}")
+            if image_tail_api:
+                logger.info(f"DEBUG: image_tail_api length: {len(image_tail_api) if image_tail_api else 0}")
+                if image_tail_api.startswith(('http://', 'https://')):
+                    logger.info(f"DEBUG: image_tail_api is URL: {image_tail_api}")
+                else:
+                    logger.info(f"DEBUG: image_tail_api is Base64 data (length: {len(image_tail_api)})")
+                payload["image_tail"] = image_tail_api
+
             prompt_val = self.get_parameter_value("prompt")
             neg_prompt_val = self.get_parameter_value("negative_prompt")
             
@@ -367,15 +395,15 @@ class KlingAI_ImageToVideo(ControlNode):
                 log_payload["image"] = f"<BASE64_DATA_LENGTH:{len(log_payload['image'])}>"
             if "static_mask" in log_payload and not log_payload["static_mask"].startswith(('http://', 'https://')):
                 log_payload["static_mask"] = f"<BASE64_DATA_LENGTH:{len(log_payload['static_mask'])}>"
+            if "image_tail" in log_payload and not log_payload["image_tail"].startswith(('http://', 'https://')):
+                log_payload["image_tail"] = f"<BASE64_DATA_LENGTH:{len(log_payload['image_tail'])}>"
             
             logger.info(f"Kling Image-to-Video API Request Payload: {json.dumps(log_payload, indent=2)}")
             response = requests.post(BASE_URL, headers=headers, json=payload, timeout=30)
-            
             # Enhanced debugging for API errors
             logger.info(f"Initial response status: {response.status_code}")
             logger.info(f"Initial response headers: {dict(response.headers)}")
             logger.info(f"Initial response text: {response.text}")
-            
             try:
                 response.raise_for_status() # Raise HTTPError for bad responses (4XX or 5XX)
             except requests.exceptions.HTTPError as e:
@@ -387,7 +415,7 @@ class KlingAI_ImageToVideo(ControlNode):
                     except json.JSONDecodeError:
                         logger.error("Could not parse error response as JSON")
                 raise
-            
+
             task_id = response.json()["data"]["task_id"]
 
             poll_url = f"{BASE_URL}/{task_id}" # Assuming polling uses the same base and task_id pattern

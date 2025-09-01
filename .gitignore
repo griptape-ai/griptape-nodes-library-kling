@@ -3,3 +3,5 @@
 .env.local
 /kling/__pycache__
 node-development-guide-v2.md
+/kling_test/venv
+/kling_test
