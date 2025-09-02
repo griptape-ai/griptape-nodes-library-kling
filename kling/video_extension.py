@@ -7,7 +7,7 @@ from griptape_nodes.traits.options import Options
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterGroup
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
-from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes.retained_mode.griptape_nodes import logger, GriptapeNodes
 
 SERVICE = "Kling"
 API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
@@ -208,11 +208,24 @@ class KlingAI_VideoExtension(ControlNode):
                         actual_video_id = result["data"]["task_result"]["videos"][0]["id"]
                         logger.info(f"Kling video extension succeeded: {video_url}")
                         
+                        # Download the generated video and save to static storage
+                        try:
+                            download_response = requests.get(video_url, timeout=60)
+                            download_response.raise_for_status()
+                            video_bytes = download_response.content
+                        except requests.exceptions.RequestException as e:
+                            raise RuntimeError(f"Failed to download extended video: {e}") from e
+
+                        filename = f"kling_video_extension_{int(time.time())}.mp4"
+                        static_files_manager = GriptapeNodes.StaticFilesManager()
+                        saved_url = static_files_manager.save_static_file(video_bytes, filename)
+
                         # Create artifact and publish outputs
-                        video_artifact = VideoUrlArtifact(url=video_url)
+                        video_artifact = VideoUrlArtifact(url=saved_url, name=filename)
                         self.publish_update_to_parameter("extended_video_url", video_artifact)
                         if actual_video_id:
-                            self.publish_update_to_parameter("video_id", actual_video_id)
+                            # Publish to correct parameter name declared for this node
+                            self.publish_update_to_parameter("task_id", actual_video_id)
                         
                         return video_artifact
                         

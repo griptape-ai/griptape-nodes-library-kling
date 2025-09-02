@@ -7,7 +7,7 @@ from griptape_nodes.traits.options import Options
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterGroup
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
-from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes.retained_mode.griptape_nodes import logger, GriptapeNodes
 
 SERVICE = "Kling"
 API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
@@ -207,7 +207,7 @@ class KlingAI_TextToVideo(ControlNode):
     def _process(self):
         prompt = self.get_parameter_value("prompt")
 
-        def generate_video() -> TextArtifact:
+        def generate_video() -> VideoUrlArtifact:
             access_key = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
             secret_key = self.get_config_value(service=SERVICE, value=SECRET_KEY_ENV_VAR)
 
@@ -240,7 +240,7 @@ class KlingAI_TextToVideo(ControlNode):
             payload = {k: v for k, v in payload.items() if v not in (None, "", {}, [])}
             
             logger.info(f"Kling Text-to-Video API Request Payload: {json.dumps(payload, indent=2)}")
-            response = requests.post(BASE_URL, headers=headers, json=payload)  # noqa: S113 Collin is this ok to ignore?
+            response = requests.post(BASE_URL, headers=headers, json=payload, timeout=30)  # noqa: S113 Collin is this ok to ignore?
             logger.info(f"Initial response status: {response.status_code}")
             logger.info(f"Initial response headers: {dict(response.headers)}")
             logger.info(f"Initial response text: {response.text[:500]}...")  # First 500 chars
@@ -313,11 +313,24 @@ class KlingAI_TextToVideo(ControlNode):
             if not video_url:
                 raise RuntimeError(f"Video generation timed out after {max_retries * 5 / 60:.1f} minutes. Task may still be processing.")
 
-            self.publish_update_to_parameter("video_url", VideoUrlArtifact(video_url))
-            if actual_video_id: # Publish the correct video ID if found
+            # Download the generated video and save to static storage
+            try:
+                download_response = requests.get(video_url, timeout=60)
+                download_response.raise_for_status()
+                video_bytes = download_response.content
+            except requests.exceptions.RequestException as e:
+                raise RuntimeError(f"Failed to download generated video: {e}") from e
+
+            filename = f"kling_text_to_video_{int(time.time())}.mp4"
+            static_files_manager = GriptapeNodes.StaticFilesManager()
+            saved_url = static_files_manager.save_static_file(video_bytes, filename)
+
+            artifact = VideoUrlArtifact(saved_url)
+            self.publish_update_to_parameter("video_url", artifact)
+            if actual_video_id:  # Publish the correct video ID if found
                 self.publish_update_to_parameter("video_id", actual_video_id)
-            logger.info(f"Video URL: {video_url}")
+            logger.info(f"Saved video to static storage as {filename}. URL: {saved_url}")
             logger.info(f"Video ID: {actual_video_id}")
-            return VideoUrlArtifact(video_url)
+            return artifact
 
         return generate_video()

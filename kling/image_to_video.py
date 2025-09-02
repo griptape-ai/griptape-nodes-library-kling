@@ -8,7 +8,7 @@ from griptape_nodes.traits.options import Options
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterGroup
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
-from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes.retained_mode.griptape_nodes import logger, GriptapeNodes
 
 SERVICE = "Kling"
 API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
@@ -465,10 +465,23 @@ class KlingAI_ImageToVideo(ControlNode):
                 logger.error(f"Polling completed but no video URL found. Final status may not have been 'succeed'. Task ID: {task_id}")
                 raise RuntimeError("Kling video generation task finished but no video URL was found or task timed out.")
 
-            video_artifact = VideoUrlArtifact(url=video_url)
+            # Download the generated video and save to static storage
+            try:
+                download_response = requests.get(video_url, timeout=60)
+                download_response.raise_for_status()
+                video_bytes = download_response.content
+            except requests.exceptions.RequestException as e:
+                raise RuntimeError(f"Failed to download generated video: {e}") from e
+
+            filename = f"kling_image_to_video_{int(time.time())}.mp4"
+            static_files_manager = GriptapeNodes.StaticFilesManager()
+            saved_url = static_files_manager.save_static_file(video_bytes, filename)
+
+            video_artifact = VideoUrlArtifact(url=saved_url, name=filename)
             self.publish_update_to_parameter("video_url", video_artifact)
             if actual_video_id: # Publish the correct video ID if found
                 self.publish_update_to_parameter("video_id", actual_video_id)
+            logger.info(f"Saved video to static storage as {filename}. URL: {saved_url}")
             logger.info(f"Video ID: {actual_video_id}") # Added logging for actual_video_id
             return video_artifact
 
