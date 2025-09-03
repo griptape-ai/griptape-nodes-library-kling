@@ -3,26 +3,18 @@ import jwt
 import requests
 import json
 import base64
-from griptape.artifacts import TextArtifact, UrlArtifact, ImageArtifact, ImageUrlArtifact
+from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape_nodes.traits.options import Options
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterGroup
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import logger, GriptapeNodes
+from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
 
 SERVICE = "Kling"
 API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
 SECRET_KEY_ENV_VAR = "KLING_SECRET_KEY"  # noqa: S105
 BASE_URL = "https://api.klingai.com/v1/videos/image2video" # Global endpoint per latest docs
-
-
-class VideoUrlArtifact(UrlArtifact):
-    """
-    Artifact that contains a URL to a video.
-    """
-
-    def __init__(self, url: str, name: str | None = None):
-        super().__init__(value=url, name=name or self.__class__.__name__)
 
 
 def encode_jwt_token(ak: str, sk: str) -> str:
@@ -477,7 +469,8 @@ class KlingAI_ImageToVideo(ControlNode):
             static_files_manager = GriptapeNodes.StaticFilesManager()
             saved_url = static_files_manager.save_static_file(video_bytes, filename)
 
-            video_artifact = VideoUrlArtifact(url=saved_url, name=filename)
+            # Create VideoUrlArtifact from the saved URL
+            video_artifact = VideoUrlArtifact(saved_url)
             self.publish_update_to_parameter("video_url", video_artifact)
             if actual_video_id: # Publish the correct video ID if found
                 self.publish_update_to_parameter("video_id", actual_video_id)
