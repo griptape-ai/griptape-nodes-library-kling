@@ -2,24 +2,18 @@ import time
 import jwt
 import requests
 import json
-from griptape.artifacts import TextArtifact, UrlArtifact
 from griptape_nodes.traits.options import Options
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterGroup
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import logger, GriptapeNodes
+from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
+
 
 SERVICE = "Kling"
 API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
 SECRET_KEY_ENV_VAR = "KLING_SECRET_KEY"  # noqa: S105
 BASE_URL = "https://api-singapore.klingai.com/v1/videos/text2video"
-
-class VideoUrlArtifact(UrlArtifact):
-    """
-    Artifact that contains a URL to a video.
-    """
-    def __init__(self, url: str):
-        super().__init__(url)
 
 
 def encode_jwt_token(ak: str, sk: str) -> str:
@@ -146,6 +140,7 @@ class KlingAI_TextToVideo(ControlNode):
         self.add_parameter(
             Parameter(
                 name="video_url",
+                type="VideoUrlArtifact",
                 output_type="VideoUrlArtifact",
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
@@ -307,7 +302,7 @@ class KlingAI_TextToVideo(ControlNode):
                     logger.warning(f"Request failed (attempt {retry_count}/{max_retries}): {e}")
                     if retry_count >= max_retries:
                         raise RuntimeError(f"Failed to poll task status after {max_retries} attempts: {e}") from e
-                    logger.info(f"Retrying in 5 seconds...")
+                    logger.info("Retrying in 5 seconds...")
                     continue
 
             if not video_url:
@@ -325,6 +320,7 @@ class KlingAI_TextToVideo(ControlNode):
             static_files_manager = GriptapeNodes.StaticFilesManager()
             saved_url = static_files_manager.save_static_file(video_bytes, filename)
 
+            # Create VideoUrlArtifact from the saved URL
             artifact = VideoUrlArtifact(saved_url)
             self.publish_update_to_parameter("video_url", artifact)
             if actual_video_id:  # Publish the correct video ID if found
