@@ -2,12 +2,12 @@ import time
 import jwt
 import requests
 import json
-from griptape_nodes.traits.options import Options
 
+from griptape.artifacts import VideoUrlArtifact
+from griptape_nodes.traits.options import Options
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterGroup
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import logger, GriptapeNodes
-from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
 
 
 SERVICE = "Kling"
