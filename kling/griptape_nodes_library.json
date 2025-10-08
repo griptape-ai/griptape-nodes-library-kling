@@ -3,11 +3,13 @@
     "library_schema_version": "0.1.0",
     "settings": [
         {
-            "description": "Environment variables for storing secrets for new AI service's nodes",
-            "category": "nodes.Kling",
+            "description": "API keys required by nodes in this library",
+            "category": "app_events.on_app_initialization_complete",
             "contents": {
-                "KLING_ACCESS_KEY": "$KLING_ACCESS_KEY",
-                "KLING_SECRET_KEY": "$KLING_SECRET_KEY"
+                "secrets_to_register": [
+                    "KLING_ACCESS_KEY",
+                    "KLING_SECRET_KEY"
+                ]
             }
         }
     ],

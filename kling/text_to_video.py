@@ -165,8 +165,8 @@ class KlingAI_TextToVideo(ControlNode):
         Returns:
             list[Exception] | None: List of exceptions if validation fails, None if validation passes.
         """
-        access_key = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
-        secret_key = self.get_config_value(service=SERVICE, value=SECRET_KEY_ENV_VAR)
+        access_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
+        secret_key = GriptapeNodes.SecretsManager().get_secret(SECRET_KEY_ENV_VAR)
 
         errors = []
         if not access_key:
@@ -203,8 +203,8 @@ class KlingAI_TextToVideo(ControlNode):
         prompt = self.get_parameter_value("prompt")
 
         def generate_video() -> VideoUrlArtifact:
-            access_key = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
-            secret_key = self.get_config_value(service=SERVICE, value=SECRET_KEY_ENV_VAR)
+            access_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
+            secret_key = GriptapeNodes.SecretsManager().get_secret(SECRET_KEY_ENV_VAR)
 
             jwt_token = encode_jwt_token(access_key, secret_key)
 

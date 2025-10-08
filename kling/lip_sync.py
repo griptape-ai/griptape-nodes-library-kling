@@ -266,8 +266,8 @@ class KlingAI_LipSync(ControlNode):
     def validate_node(self) -> list[Exception] | None:
         """Validates that the Kling API keys are configured and parameters are valid."""
         errors = []
-        access_key = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
-        secret_key = self.get_config_value(service=SERVICE, value=SECRET_KEY_ENV_VAR)
+        access_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
+        secret_key = GriptapeNodes.SecretsManager().get_secret(SECRET_KEY_ENV_VAR)
 
         if not access_key:
             errors.append(ValueError(f"Kling access key not found. Set {API_KEY_ENV_VAR}."))
@@ -368,8 +368,8 @@ class KlingAI_LipSync(ControlNode):
             raise ValueError(f"Validation failed: {error_message}")
             
         def create_lip_sync() -> VideoUrlArtifact:
-            access_key = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
-            secret_key = self.get_config_value(service=SERVICE, value=SECRET_KEY_ENV_VAR)
+            access_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
+            secret_key = GriptapeNodes.SecretsManager().get_secret(SECRET_KEY_ENV_VAR)
             jwt_token = encode_jwt_token(access_key, secret_key)
             headers = {"Content-Type": "application/json", "Authorization": f"Bearer {jwt_token}"}
 
