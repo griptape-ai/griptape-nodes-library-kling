@@ -184,6 +184,11 @@ class KlingAI_VideoExtension(ControlNode):
             
             # Make request
             response = requests.post(BASE_URL, headers=headers, json=payload, timeout=30)
+            if response.status_code != 200:
+                try:
+                    logger.error(f"Kling Video Extension error body: {json.dumps(response.json(), indent=2)}")
+                except Exception:
+                    logger.error(f"Kling Video Extension error text: {response.text}")
             response.raise_for_status()
             
             task_id = response.json()["data"]["task_id"]
