@@ -53,7 +53,7 @@ class KlingAI_TextToVideo(ControlNode):
                 default_value="kling-v1-6",
                 tooltip="Model Name",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["kling-v1-6", "kling-v2-master", "kling-v2-1-master"])},
+                traits={Options(choices=["kling-v1-6", "kling-v2-master", "kling-v2-1-master", "kling-v2-5-turbo"])}
             )
         )
         self.add_parameter(
@@ -183,18 +183,41 @@ class KlingAI_TextToVideo(ControlNode):
         if negative_prompt and len(negative_prompt) > 2500:
             errors.append(ValueError("negative_prompt exceeds 2500 characters (limit: 2500)."))
 
+        # kling-v2-5-turbo constraints: pro-only, 5s/10s only, 1080p (16:9) only
+        model = self.get_parameter_value("model_name")
+        if model == "kling-v2-5-turbo":
+            mode = self.get_parameter_value("mode")
+            duration = self.get_parameter_value("duration")
+            aspect_ratio = self.get_parameter_value("aspect_ratio")
+            if mode != "pro":
+                errors.append(ValueError("kling-v2-5-turbo only supports pro mode"))
+            if duration not in [5, 10]:
+                errors.append(ValueError("kling-v2-5-turbo only supports durations 5 or 10 seconds"))
+            if aspect_ratio != "16:9":
+                errors.append(ValueError("kling-v2-5-turbo only supports 1080p (16:9) aspect ratio"))
+
         return errors if errors else None
 
     def after_value_set(self, parameter: Parameter, value: any, modified_parameters_set: set[str] | None = None) -> None:
         """Update parameter visibility based on model selection."""
         if parameter.name == "model_name":
-            # All current models (kling-v1-6, kling-v2-master, kling-v2-1-master) support all options
-            # Show all parameters for these models
-            self.show_parameter_by_name(["mode", "duration"])
-                
-            # Add all potentially modified parameters to the set if provided
-            if modified_parameters_set is not None:
-                modified_parameters_set.update(["mode", "duration"])
+            if value == "kling-v2-5-turbo":
+                self.hide_parameter_by_name(["mode", "aspect_ratio"])  # pro-only, 1080p only
+                current_mode = self.get_parameter_value("mode")
+                if current_mode != "pro":
+                    self.set_parameter_value("mode", "pro")
+                current_aspect = self.get_parameter_value("aspect_ratio")
+                if current_aspect != "16:9":
+                    self.set_parameter_value("aspect_ratio", "16:9")
+                current_duration = self.get_parameter_value("duration")
+                if current_duration not in [5, 10]:
+                    self.set_parameter_value("duration", 5)
+                if modified_parameters_set is not None:
+                    modified_parameters_set.update(["mode", "aspect_ratio", "duration"])
+            else:
+                self.show_parameter_by_name(["mode", "aspect_ratio", "duration"])
+                if modified_parameters_set is not None:
+                    modified_parameters_set.update(["mode", "aspect_ratio", "duration"])
 
     def process(self) -> AsyncResult[None]:
         yield lambda: self._process()

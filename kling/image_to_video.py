@@ -43,7 +43,7 @@ class KlingAI_ImageToVideo(ControlNode):
                 default_value="kling-v2-1",
                 tooltip="Model Name for generation.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["kling-v1", "kling-v1-5", "kling-v2-master", "kling-v2-1", "kling-v2-1-master"])},
+                traits={Options(choices=["kling-v1", "kling-v1-5", "kling-v2-master", "kling-v2-1", "kling-v2-1-master", "kling-v2-5-turbo"])},
                 ui_options={"display_name": "Model"}
             )
         )
@@ -272,6 +272,11 @@ class KlingAI_ImageToVideo(ControlNode):
             errors.append(ValueError("kling-v1 only supports 5s duration"))
         if model in ["kling-v1-5"] and mode != "pro":
             errors.append(ValueError(f"{model} only supports pro mode"))
+        if model == "kling-v2-5-turbo":
+            if mode != "pro":
+                errors.append(ValueError("kling-v2-5-turbo only supports pro mode"))
+            if duration not in [5, 10]:
+                errors.append(ValueError("kling-v2-5-turbo only supports durations 5 or 10 seconds"))
 
         cfg_scale_val = self.get_parameter_value("cfg_scale")
         if not (0 <= cfg_scale_val <= 1): # type: ignore[operator]
@@ -495,6 +500,13 @@ class KlingAI_ImageToVideo(ControlNode):
                     self.set_parameter_value("duration", 5)
             elif value in ["kling-v1-5"]:
                 # kling-v1-5: only pro mode, either duration
+                self.hide_parameter_by_name("mode")
+                self.show_parameter_by_name("duration")
+                current_mode = self.get_parameter_value("mode")
+                if current_mode != "pro":
+                    self.set_parameter_value("mode", "pro")
+            elif value == "kling-v2-5-turbo":
+                # v2.5 turbo: pro-only, durations 5 or 10
                 self.hide_parameter_by_name("mode")
                 self.show_parameter_by_name("duration")
                 current_mode = self.get_parameter_value("mode")
