@@ -201,6 +201,14 @@ class KlingAI_ImageToVideo(ControlNode):
             is_local_http = "localhost" in url_string or "127.0.0.1" in url_string
             is_relative_static = url_string.startswith("/static/")
 
+            # If the input is a data URL like 'data:image/png;base64,XXXX', strip the prefix and return only Base64
+            if url_string.startswith("data:image"):
+                try:
+                    return url_string.split(",", 1)[1]
+                except Exception:
+                    # If split fails for any reason, fall back to original string
+                    return url_string
+
             if is_local_http and url_string.startswith("http"):
                 try:
                     logger.info(f"_get_image_api_data: Converting local URL {url_string} to Base64.")
@@ -254,13 +262,8 @@ class KlingAI_ImageToVideo(ControlNode):
         if not secret_key:
             errors.append(ValueError(f"Kling secret key not found. Set {SECRET_KEY_ENV_VAR}."))
 
-        # Validate images
+        # Validate images (at least one of image or image_tail must be provided)
         image_val = self._get_image_api_data("image")
-        
-        logger.info(f"KlingAI_ImageToVideo validate_node: image present: {bool(image_val)}")
-        
-        if not image_val:
-            errors.append(ValueError("Start frame image must be provided."))
 
         # Minimal validation - UI should prevent most issues
         model = self.get_parameter_value("model_name")
@@ -289,8 +292,10 @@ class KlingAI_ImageToVideo(ControlNode):
             except json.JSONDecodeError:
                 errors.append(ValueError("Dynamic Masks 'dynamic_masks' is not a valid JSON string."))
 
-        # Enforce end-frame support rules per v2.1 docs
+        # Enforce end-frame support rules per docs
         image_tail_val = self._get_image_api_data("image_tail")
+        if not image_val and not image_tail_val:
+            errors.append(ValueError("At least one of 'image' or 'image_tail' must be provided."))
         if image_tail_val:
             if model != "kling-v2-1" or mode != "pro" or duration not in [5, 10]:
                 errors.append(
