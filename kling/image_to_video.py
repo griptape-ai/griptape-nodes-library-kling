@@ -297,10 +297,14 @@ class KlingAI_ImageToVideo(ControlNode):
         if not image_val and not image_tail_val:
             errors.append(ValueError("At least one of 'image' or 'image_tail' must be provided."))
         if image_tail_val:
-            if model != "kling-v2-1" or mode != "pro" or duration not in [5, 10]:
+            end_frame_supported = (
+                (model == "kling-v2-1" and mode == "pro" and duration in [5, 10]) or
+                (model == "kling-v2-5-turbo" and mode == "pro" and duration in [5, 10])
+            )
+            if not end_frame_supported:
                 errors.append(
                     ValueError(
-                        "image_tail is only supported on model kling-v2-1 with mode=pro and duration 5 or 10."
+                        "image_tail is only supported on models kling-v2-1 and kling-v2-5-turbo with mode=pro and duration 5 or 10."
                     )
                 )
 
