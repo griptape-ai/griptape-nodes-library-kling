@@ -53,7 +53,7 @@ class KlingAI_TextToVideo(ControlNode):
                 default_value="kling-v1-6",
                 tooltip="Model Name",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["kling-v1-6", "kling-v2-master", "kling-v2-1-master", "kling-v2-5-turbo"])}
+                traits={Options(choices=["kling-v1-6", "kling-v2-master", "kling-v2-1-master", "kling-v2-5-turbo", "kling-v2-6"])}
             )
         )
         self.add_parameter(
@@ -113,6 +113,18 @@ class KlingAI_TextToVideo(ControlNode):
                 tooltip="Video Length, unit: s (seconds)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=[5, 10])}
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="sound",
+                input_types=["str"],
+                output_type="str",
+                type="str",
+                default_value="off",
+                tooltip="Generate native audio with the video (kling-v2-6 only)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=["on", "off"])}
             )
         )
         # Callback Parameters Group
@@ -195,6 +207,15 @@ class KlingAI_TextToVideo(ControlNode):
                 errors.append(ValueError("kling-v2-5-turbo only supports durations 5 or 10 seconds"))
             if aspect_ratio != "16:9":
                 errors.append(ValueError("kling-v2-5-turbo only supports 1080p (16:9) aspect ratio"))
+        
+        # kling-v2-6 constraints: pro-only, 5s/10s only
+        if model == "kling-v2-6":
+            mode = self.get_parameter_value("mode")
+            duration = self.get_parameter_value("duration")
+            if mode != "pro":
+                errors.append(ValueError("kling-v2-6 only supports pro mode"))
+            if duration not in [5, 10]:
+                errors.append(ValueError("kling-v2-6 only supports durations 5 or 10 seconds"))
 
         return errors if errors else None
 
@@ -212,12 +233,25 @@ class KlingAI_TextToVideo(ControlNode):
                 current_duration = self.get_parameter_value("duration")
                 if current_duration not in [5, 10]:
                     self.set_parameter_value("duration", 5)
+                self.hide_parameter_by_name("sound")  # v2-5-turbo doesn't support sound
                 if modified_parameters_set is not None:
-                    modified_parameters_set.update(["mode", "aspect_ratio", "duration"])
+                    modified_parameters_set.update(["mode", "aspect_ratio", "duration", "sound"])
+            elif value == "kling-v2-6":
+                self.hide_parameter_by_name("mode")  # pro-only
+                self.show_parameter_by_name(["aspect_ratio", "duration", "sound"])  # v2.6 supports sound
+                current_mode = self.get_parameter_value("mode")
+                if current_mode != "pro":
+                    self.set_parameter_value("mode", "pro")
+                current_duration = self.get_parameter_value("duration")
+                if current_duration not in [5, 10]:
+                    self.set_parameter_value("duration", 5)
+                if modified_parameters_set is not None:
+                    modified_parameters_set.update(["mode", "duration", "sound"])
             else:
                 self.show_parameter_by_name(["mode", "aspect_ratio", "duration"])
+                self.hide_parameter_by_name("sound")  # Other models don't support sound
                 if modified_parameters_set is not None:
-                    modified_parameters_set.update(["mode", "aspect_ratio", "duration"])
+                    modified_parameters_set.update(["mode", "aspect_ratio", "duration", "sound"])
 
     def process(self) -> AsyncResult[None]:
         yield lambda: self._process()
@@ -241,6 +275,13 @@ class KlingAI_TextToVideo(ControlNode):
                 "mode": self.get_parameter_value("mode"),
                 "aspect_ratio": self.get_parameter_value("aspect_ratio"),
             }
+
+            # Add sound parameter for v2.6
+            model_name = self.get_parameter_value("model_name")
+            if model_name == "kling-v2-6":
+                sound_val = self.get_parameter_value("sound")
+                if sound_val:
+                    payload["sound"] = sound_val
 
             negative_prompt_val = self.get_parameter_value("negative_prompt")
             if negative_prompt_val:

@@ -43,7 +43,7 @@ class KlingAI_ImageToVideo(ControlNode):
                 default_value="kling-v2-1",
                 tooltip="Model Name for generation.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["kling-v1", "kling-v1-5", "kling-v2-master", "kling-v2-1", "kling-v2-1-master", "kling-v2-5-turbo"])},
+                traits={Options(choices=["kling-v1", "kling-v1-5", "kling-v2-master", "kling-v2-1", "kling-v2-1-master", "kling-v2-5-turbo", "kling-v2-6"])},
                 ui_options={"display_name": "Model"}
             )
         )
@@ -124,6 +124,16 @@ class KlingAI_ImageToVideo(ControlNode):
                 tooltip="Video Length in seconds.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=[5, 10])}
+            )
+            Parameter(
+                name="sound",
+                input_types=["str"],
+                output_type="str",
+                type="str",
+                default_value="off",
+                tooltip="Generate native audio with the video (kling-v2-6 only)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=["on", "off"])}
             )
         self.add_node_element(gen_settings_group)
 
@@ -280,6 +290,11 @@ class KlingAI_ImageToVideo(ControlNode):
                 errors.append(ValueError("kling-v2-5-turbo only supports pro mode"))
             if duration not in [5, 10]:
                 errors.append(ValueError("kling-v2-5-turbo only supports durations 5 or 10 seconds"))
+        if model == "kling-v2-6":
+            if mode != "pro":
+                errors.append(ValueError("kling-v2-6 only supports pro mode"))
+            if duration not in [5, 10]:
+                errors.append(ValueError("kling-v2-6 only supports durations 5 or 10 seconds"))
 
         cfg_scale_val = self.get_parameter_value("cfg_scale")
         if not (0 <= cfg_scale_val <= 1): # type: ignore[operator]
@@ -337,6 +352,12 @@ class KlingAI_ImageToVideo(ControlNode):
                 "cfg_scale": cfg_scale,
                 "mode": mode,
             }
+
+            # Add sound parameter for v2.6
+            if model_name == "kling-v2-6":
+                sound_val = self.get_parameter_value("sound")
+                if sound_val:
+                    payload["sound"] = sound_val
 
             image_api = self._get_image_api_data("image")
             
@@ -499,28 +520,40 @@ class KlingAI_ImageToVideo(ControlNode):
             if value == "kling-v1":
                 # kling-v1: only 5s duration, std or pro mode
                 self.show_parameter_by_name("mode")
-                self.hide_parameter_by_name("duration")
+                self.hide_parameter_by_name(["duration", "sound"])
                 current_duration = self.get_parameter_value("duration")
                 if current_duration != 5:
                     self.set_parameter_value("duration", 5)
             elif value in ["kling-v1-5"]:
                 # kling-v1-5: only pro mode, either duration
-                self.hide_parameter_by_name("mode")
+                self.hide_parameter_by_name(["mode", "sound"])
                 self.show_parameter_by_name("duration")
                 current_mode = self.get_parameter_value("mode")
                 if current_mode != "pro":
                     self.set_parameter_value("mode", "pro")
             elif value == "kling-v2-5-turbo":
                 # v2.5 turbo: pro-only, durations 5 or 10
-                self.hide_parameter_by_name("mode")
+                self.hide_parameter_by_name(["mode", "sound"])
                 self.show_parameter_by_name("duration")
                 current_mode = self.get_parameter_value("mode")
                 if current_mode != "pro":
                     self.set_parameter_value("mode", "pro")
+            elif value == "kling-v2-6":
+                # v2.6: pro-only, durations 5 or 10, supports sound
+                self.hide_parameter_by_name("mode")
+                self.show_parameter_by_name(["duration", "sound"])
+                current_mode = self.get_parameter_value("mode")
+                if current_mode != "pro":
+                    self.set_parameter_value("mode", "pro")
+                current_duration = self.get_parameter_value("duration")
+                if current_duration not in [5, 10]:
+                    self.set_parameter_value("duration", 5)
             else:
                 # kling-v2+: all modes and durations available
                 self.show_parameter_by_name(["mode", "duration"])
+                self.hide_parameter_by_name("sound")
                 
             # Add all potentially modified parameters to the set if provided
             if modified_parameters_set is not None:
+                modified_parameters_set.update(["static_mask", "dynamic_masks", "mode", "duration", "sound"]) 
                 modified_parameters_set.update(["static_mask", "dynamic_masks", "mode", "duration"]) 
