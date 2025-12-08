@@ -134,6 +134,7 @@ class KlingAI_ImageToVideo(ControlNode):
                 tooltip="Generate native audio with the video (kling-v2-6 only)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["on", "off"])}
+                hide=True  # Hidden by default; shown only for kling-v2-6
             )
         self.add_node_element(gen_settings_group)
 
@@ -252,7 +253,7 @@ class KlingAI_ImageToVideo(ControlNode):
             logger.warning(f"_get_image_api_data: received unhandled dict structure: {image_input}")
             return None
         elif isinstance(image_input, str) and image_input.strip():
-             # If it's a raw string, it could be a public URL, Base64, or a local URL.
+            # If it's a raw string, it could be a public URL, Base64, or a local URL.
             return resolve_url_to_data(image_input.strip())
         
         return None
