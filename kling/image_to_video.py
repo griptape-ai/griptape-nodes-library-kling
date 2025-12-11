@@ -133,7 +133,7 @@ class KlingAI_ImageToVideo(ControlNode):
                 default_value="off",
                 tooltip="Generate native audio with the video (kling-v2-6 only)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["on", "off"])}
+                traits={Options(choices=["on", "off"])},
                 hide=True  # Hidden by default; shown only for kling-v2-6
             )
         self.add_node_element(gen_settings_group)
