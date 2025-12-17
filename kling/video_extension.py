@@ -8,6 +8,7 @@ from griptape_nodes.traits.options import Options
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterGroup
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import logger, GriptapeNodes
+from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 
 SERVICE = "Kling"
 API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
@@ -223,7 +224,7 @@ class KlingAI_VideoExtension(ControlNode):
 
                         filename = f"kling_video_extension_{int(time.time())}.mp4"
                         static_files_manager = GriptapeNodes.StaticFilesManager()
-                        saved_url = static_files_manager.save_static_file(video_bytes, filename)
+                        saved_url = static_files_manager.save_static_file(video_bytes, filename, ExistingFilePolicy.CREATE_NEW)
 
                         # Create artifact and publish outputs
                         video_artifact = VideoUrlArtifact(url=saved_url, name=filename)
