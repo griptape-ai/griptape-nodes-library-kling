@@ -316,7 +316,8 @@ class KlingAI_ImageToVideo(ControlNode):
         if image_tail_val:
             end_frame_supported = (
                 (model == "kling-v2-1" and mode == "pro" and duration in [5, 10]) or
-                (model == "kling-v2-5-turbo" and mode == "pro" and duration in [5, 10])
+                (model == "kling-v2-5-turbo" and mode == "pro" and duration in [5, 10]) or
+                (model == "kling-v2-6" and mode == "pro" and duration in [5, 10])
             )
             if not end_frame_supported:
                 errors.append(
