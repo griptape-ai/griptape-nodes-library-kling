@@ -1,10 +1,13 @@
+import base64
+import json
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import jwt
 import requests
-import json
-import base64
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact, VideoUrlArtifact
 from griptape_nodes.traits.options import Options
+from griptape_nodes.traits.slider import Slider
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterGroup
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -137,6 +140,16 @@ class KlingAI_ImageToVideo(ControlNode):
                 traits={Options(choices=[5, 10])},
             )
             Parameter(
+                name="num_videos",
+                input_types=["int"],
+                output_type="int",
+                type="int",
+                default_value=1,
+                tooltip="Number of videos to generate (1-5).",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Slider(min_val=1, max_val=5)},
+            )
+            Parameter(
                 name="sound",
                 input_types=["str"],
                 output_type="str",
@@ -214,6 +227,16 @@ class KlingAI_ImageToVideo(ControlNode):
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="The Task ID of the generated video from Kling AI.",
                 ui_options={"placeholder_text": ""},
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="video_urls",
+                type="list",
+                default_value=[],
+                output_type="list[VideoUrlArtifact]",
+                tooltip="List of generated videos (completion order).",
+                allowed_modes={ParameterMode.OUTPUT},
             )
         )
 
@@ -361,7 +384,7 @@ class KlingAI_ImageToVideo(ControlNode):
             error_message = "; ".join(str(e) for e in validation_errors)
             raise ValueError(f"Validation failed: {error_message}")
 
-        def generate_video() -> VideoUrlArtifact:
+        def generate_video_job(job_index: int) -> tuple[VideoUrlArtifact, str | None]:
             access_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
             secret_key = GriptapeNodes.SecretsManager().get_secret(SECRET_KEY_ENV_VAR)
             jwt_token = encode_jwt_token(access_key, secret_key)  # type: ignore[arg-type]
@@ -532,20 +555,60 @@ class KlingAI_ImageToVideo(ControlNode):
             except requests.exceptions.RequestException as e:
                 raise RuntimeError(f"Failed to download generated video: {e}") from e
 
-            filename = f"kling_image_to_video_{int(time.time())}.mp4"
+            timestamp = int(time.time() * 1000)
+            filename = f"kling_image_to_video_{timestamp}_{job_index}.mp4"
             static_files_manager = GriptapeNodes.StaticFilesManager()
             saved_url = static_files_manager.save_static_file(video_bytes, filename, ExistingFilePolicy.CREATE_NEW)
 
             # Create VideoUrlArtifact from the saved URL
             video_artifact = VideoUrlArtifact(saved_url)
-            self.publish_update_to_parameter("video_url", video_artifact)
-            if actual_video_id:  # Publish the correct video ID if found
-                self.publish_update_to_parameter("video_id", actual_video_id)
             logger.info(f"Saved video to static storage as {filename}. URL: {saved_url}")
             logger.info(f"Video ID: {actual_video_id}")  # Added logging for actual_video_id
-            return video_artifact
+            return video_artifact, actual_video_id
 
-        return generate_video()
+        num_videos = self.get_parameter_value("num_videos")
+        if num_videos is None:
+            num_videos = 1
+
+        logger.info(f"Generating {num_videos} video(s) in parallel.")
+
+        video_artifacts: list[VideoUrlArtifact] = []
+        first_video_artifact = None
+        first_video_id = None
+
+        if num_videos == 1:
+            result_artifact, result_video_id = generate_video_job(1)
+            video_artifacts.append(result_artifact)
+            first_video_artifact = result_artifact
+            first_video_id = result_video_id
+        else:
+            with ThreadPoolExecutor(max_workers=num_videos) as executor:
+                futures = []
+                for job_index in range(num_videos):
+                    futures.append(executor.submit(generate_video_job, job_index + 1))
+
+                for future in as_completed(futures):
+                    try:
+                        result_artifact, result_video_id = future.result()
+                    except Exception:
+                        for pending_future in futures:
+                            pending_future.cancel()
+                        raise
+
+                    video_artifacts.append(result_artifact)
+                    if first_video_artifact is None:
+                        first_video_artifact = result_artifact
+                        first_video_id = result_video_id
+
+        if first_video_artifact is None:
+            raise RuntimeError("No videos were generated.")
+
+        self.publish_update_to_parameter("video_url", first_video_artifact)
+        if first_video_id:
+            self.publish_update_to_parameter("video_id", first_video_id)
+        self.publish_update_to_parameter("video_urls", video_artifacts)
+
+        return first_video_artifact
 
     def after_value_set(
         self, parameter: Parameter, value: any, modified_parameters_set: set[str] | None = None
