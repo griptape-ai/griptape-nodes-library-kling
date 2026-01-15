@@ -682,3 +682,15 @@ class KlingAI_ImageToVideo(ControlNode):
             # Add all potentially modified parameters to the set if provided
             if modified_parameters_set is not None:
                 modified_parameters_set.update(["static_mask", "dynamic_masks", "mode", "duration", "sound"])
+        if parameter.name == "num_videos":
+            num_videos = self.get_parameter_value("num_videos")
+            if num_videos is None:
+                num_videos = 1
+            for index in range(1, 5):
+                param_name = f"video_url_{index}"
+                if num_videos > index:
+                    self.show_parameter_by_name(param_name)
+                else:
+                    self.hide_parameter_by_name(param_name)
+            if modified_parameters_set is not None:
+                modified_parameters_set.update([f"video_url_{index}" for index in range(1, 5)])
