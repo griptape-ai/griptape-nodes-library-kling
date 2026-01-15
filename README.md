@@ -29,6 +29,7 @@ Generates a video from a text prompt.
 | `mode`                   | `str`   | Video generation mode (`std`: Standard, `pro`: Professional).                                              | `std`           |
 | `aspect_ratio`           | `str`   | Aspect ratio of the generated video frame (width:height). Choices: `16:9`, `9:16`, `1:1`.                    | `16:9`          |
 | `duration`               | `str`   | Video Length, unit: s (seconds). Choices: `5`, `10`.                                                         | `5`             |
+| `num_videos`             | `int`   | Number of videos to generate in parallel (1-5).                                                             | `1`             |
 | `callback_url`           | `str`   | Callback notification address for task status changes.                                                     | `""`            |
 | `external_task_id`       | `str`   | Customized Task ID (must be unique within user account).                                                   | `""`            |
 | `camera_control_type`    | `str`   | Predefined camera movement type. Select `(Auto)` for model default. If `simple`, ensure only one config value is non-zero. Choices: `(Auto)`, `simple`, `down_back`, `forward_up`, `right_turn_forward`, `left_turn_forward`. | `(Auto)`        |
@@ -38,10 +39,17 @@ Generates a video from a text prompt.
 | `camera_config_tilt`     | `float` | Tilt (rotation around y-axis, -10 to 10). Use if `camera_control_type` is `simple`.                          | `0.0`           |
 | `camera_config_roll`     | `float` | Roll (rotation around z-axis, -10 to 10). Use if `camera_control_type` is `simple`.                           | `0.0`           |
 | `camera_config_zoom`     | `float` | Zoom (-10 to 10). Use if `camera_control_type` is `simple`.                                                  | `0.0`           |
-| `video_url`              | `VideoUrlArtifact` | **Output:** Video URL.                                                                                     | `None`          |
-| `video_id`               | `str`   | **Output:** The Task ID of the generated video from Kling AI.                                                | `None`          |
+| `video_url`             | `VideoUrlArtifact`       | **Output:** Video URL (index 0).                                                                                                                                                                                              | `None`        |
+| `video_url_1`             | `VideoUrlArtifact`       | **Output:** Video URL (index 1).                                                                                                                                                                                              | `None`        |
+| `video_url_2`             | `VideoUrlArtifact`       | **Output:** Video URL (index 2).                                                                                                                                                                                              | `None`        |
+| `video_url_3`             | `VideoUrlArtifact`       | **Output:** Video URL (index 3).                                                                                                                                                                                              | `None`        |
+| `video_url_4`             | `VideoUrlArtifact`       | **Output:** Video URL (index 4).                                                                                                                                                                                              | `None`        |
+| `video_urls`              | `list[VideoUrlArtifact]` | **Output:** List of generated videos (completion order).                                                                                                                                                                      | `[]`          |
 
 *Note: `Callback` and `Camera Controls` parameters are grouped and may be collapsed by default in the UI.*
+
+**Multiple video generation:**  
+Set `num_videos` to generate multiple videos in parallel. The first completed video is exposed in `video_url`, while all completed videos are returned in `video_urls` in completion order. When `num_videos` is `1`, `video_urls` contains a single item matching `video_url`.
 
 ### Kling AI Image to Video (`KlingAI_ImageToVideo`)
 
@@ -59,6 +67,7 @@ Generates a video from a reference image and optional text prompts.
 | `cfg_scale`               | `float`                       | Flexibility (0-1). Higher value = lower flexibility, stronger prompt relevance.                                                         | `0.5`           |
 | `mode`                    | `str`                         | Video generation mode (`std`: Standard, `pro`: Professional).                                                                             | `std`           |
 | `duration`                | `str`                         | Video Length in seconds. Choices: `5`, `10`.                                                                                                | `5`             |
+| `num_videos`              | `int`                         | Number of videos to generate in parallel (1-5).                                                                                            | `1`             |
 | `static_mask`             | `ImageArtifact` / `str`       | Static Brush Application Area. Input `ImageArtifact`, `ImageUrlArtifact`, direct URL, or Base64 string. Mutually exclusive with Camera Controls. | `None`          |
 | `dynamic_masks`           | `str`                         | JSON string for Dynamic Brush Configuration List. Masks within JSON must be URL/Base64. Mutually exclusive with Camera Controls.          | `None`          |
 | `camera_control_type`     | `str`                         | Predefined camera movement. `(Auto)` for model default. `simple` requires one config value. Mutually exclusive with Masks. Choices: `(Auto)`, `simple`, `down_back`, `forward_up`, `right_turn_forward`, `left_turn_forward`. | `(Auto)`        |
@@ -70,10 +79,17 @@ Generates a video from a reference image and optional text prompts.
 | `camera_config_zoom`      | `float`                       | Camera zoom movement (-10 to 10). Use if type is `simple`.                                                                                | `0.0`           |
 | `callback_url`            | `str`                         | Callback notification address for task status changes.                                                                                    | `""`            |
 | `external_task_id`        | `str`                         | Customized Task ID (must be unique within user account).                                                                                  | `""`            |
-| `video_url`               | `VideoUrlArtifact`            | **Output:** Output URL of the generated video.                                                                                              | `None`          |
-| `video_id`                | `str`                         | **Output:** The Task ID of the generated video from Kling AI.                                                                               | `None`          |
+| `video_url`             | `VideoUrlArtifact`       | **Output:** Output URL of the generated video (index 0).                                                                                                                                                                      | `None`        |
+| `video_url_1`             | `VideoUrlArtifact`       | **Output:** Output URL of the generated video (index 1).                                                                                                                                                                      | `None`        |
+| `video_url_2`             | `VideoUrlArtifact`       | **Output:** Output URL of the generated video (index 2).                                                                                                                                                                      | `None`        |
+| `video_url_3`             | `VideoUrlArtifact`       | **Output:** Output URL of the generated video (index 3).                                                                                                                                                                      | `None`        |
+| `video_url_4`             | `VideoUrlArtifact`       | **Output:** Output URL of the generated video (index 4).                                                                                                                                                                      | `None`        |
+| `video_urls`              | `list[VideoUrlArtifact]` | **Output:** List of generated videos (completion order).                                                                                                                                                                      | `[]`          |
 
 *Note: `Image Inputs`, `Prompts`, `Generation Settings`, `Masks`, `Camera Controls`, and `Callback` parameters are grouped and may be collapsed by default in the UI.*
+
+**Multiple video generation:**  
+Set `num_videos` to generate multiple videos in parallel. The first completed video is exposed in `video_url`, while all completed videos are returned in `video_urls` in completion order. When `num_videos` is `1`, `video_urls` contains a single item matching `video_url`.
 
 ### Kling AI Video Extension (`KlingAI_VideoExtension`)
 

@@ -1,10 +1,13 @@
+import json
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import jwt
 import requests
-import json
 
 from griptape.artifacts import VideoUrlArtifact
 from griptape_nodes.traits.options import Options
+from griptape_nodes.traits.slider import Slider
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterGroup
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import logger, GriptapeNodes
@@ -118,6 +121,18 @@ class KlingAI_TextToVideo(ControlNode):
         )
         self.add_parameter(
             Parameter(
+                name="num_videos",
+                input_types=["int"],
+                output_type="int",
+                type="int",
+                default_value=1,
+                tooltip="Number of videos to generate (1-5).",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Slider(min_val=1, max_val=5)},
+            )
+        )
+        self.add_parameter(
+            Parameter(
                 name="sound",
                 input_types=["str"],
                 output_type="str",
@@ -157,19 +172,62 @@ class KlingAI_TextToVideo(ControlNode):
                 output_type="VideoUrlArtifact",
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
-                tooltip="Video URL",
+                tooltip="Video URL (index 0).",
                 ui_options={"placeholder_text": "", "is_full_width": True}
             )
         )
         self.add_parameter(
             Parameter(
-                name="video_id",
-                output_type="str",
-                type="str",
+                name="video_url_1",
+                type="VideoUrlArtifact",
+                output_type="VideoUrlArtifact",
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
-                tooltip="The Task ID of the generated video from Kling AI.",
-                ui_options={"placeholder_text": "", "is_full_width": True}
+                tooltip="Video URL (index 1).",
+                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True}
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="video_url_2",
+                type="VideoUrlArtifact",
+                output_type="VideoUrlArtifact",
+                default_value=None,
+                allowed_modes={ParameterMode.OUTPUT},
+                tooltip="Video URL (index 2).",
+                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True}
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="video_url_3",
+                type="VideoUrlArtifact",
+                output_type="VideoUrlArtifact",
+                default_value=None,
+                allowed_modes={ParameterMode.OUTPUT},
+                tooltip="Video URL (index 3).",
+                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True}
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="video_url_4",
+                type="VideoUrlArtifact",
+                output_type="VideoUrlArtifact",
+                default_value=None,
+                allowed_modes={ParameterMode.OUTPUT},
+                tooltip="Video URL (index 4).",
+                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True}
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="video_urls",
+                type="list",
+                default_value=[],
+                output_type="list[VideoUrlArtifact]",
+                tooltip="List of generated videos (completion order).",
+                allowed_modes={ParameterMode.OUTPUT},
             )
         )
 
@@ -253,6 +311,16 @@ class KlingAI_TextToVideo(ControlNode):
                 self.hide_parameter_by_name("sound")  # Other models don't support sound
                 if modified_parameters_set is not None:
                     modified_parameters_set.update(["mode", "aspect_ratio", "duration", "sound"])
+        if parameter.name == "num_videos":
+            num_videos = self.get_parameter_value("num_videos")
+            if num_videos is None:
+                num_videos = 1
+            for index in range(1, 5):
+                param_name = f"video_url_{index}"
+                if num_videos > index:
+                    self.show_parameter_by_name(param_name)
+                else:
+                    self.hide_parameter_by_name(param_name)
 
     def process(self) -> AsyncResult[None]:
         yield lambda: self._process()
@@ -260,7 +328,7 @@ class KlingAI_TextToVideo(ControlNode):
     def _process(self):
         prompt = self.get_parameter_value("prompt")
 
-        def generate_video() -> VideoUrlArtifact:
+        def generate_video_job(job_index: int) -> tuple[VideoUrlArtifact, str | None]:
             access_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
             secret_key = GriptapeNodes.SecretsManager().get_secret(SECRET_KEY_ENV_VAR)
 
@@ -381,17 +449,61 @@ class KlingAI_TextToVideo(ControlNode):
             except requests.exceptions.RequestException as e:
                 raise RuntimeError(f"Failed to download generated video: {e}") from e
 
-            filename = f"kling_text_to_video_{int(time.time())}.mp4"
+            timestamp = int(time.time() * 1000)
+            filename = f"kling_text_to_video_{timestamp}_{job_index}.mp4"
             static_files_manager = GriptapeNodes.StaticFilesManager()
             saved_url = static_files_manager.save_static_file(video_bytes, filename, ExistingFilePolicy.CREATE_NEW)
 
             # Create VideoUrlArtifact from the saved URL
             artifact = VideoUrlArtifact(saved_url)
-            self.publish_update_to_parameter("video_url", artifact)
-            if actual_video_id:  # Publish the correct video ID if found
-                self.publish_update_to_parameter("video_id", actual_video_id)
             logger.info(f"Saved video to static storage as {filename}. URL: {saved_url}")
             logger.info(f"Video ID: {actual_video_id}")
-            return artifact
+            return artifact, actual_video_id
 
-        return generate_video()
+        num_videos = self.get_parameter_value("num_videos")
+        if num_videos is None:
+            num_videos = 1
+
+        logger.info(f"Generating {num_videos} video(s) in parallel.")
+
+        video_artifacts: list[VideoUrlArtifact] = []
+        first_video_artifact = None
+
+        if num_videos == 1:
+            result_artifact, _ = generate_video_job(1)
+            video_artifacts.append(result_artifact)
+            first_video_artifact = result_artifact
+        else:
+            with ThreadPoolExecutor(max_workers=num_videos) as executor:
+                futures = []
+                for job_index in range(num_videos):
+                    futures.append(executor.submit(generate_video_job, job_index + 1))
+
+                for future in as_completed(futures):
+                    try:
+                        result_artifact, _ = future.result()
+                    except Exception:
+                        for pending_future in futures:
+                            pending_future.cancel()
+                        raise
+
+                    video_artifacts.append(result_artifact)
+                    if first_video_artifact is None:
+                        first_video_artifact = result_artifact
+            
+        if first_video_artifact is None:
+            raise RuntimeError("No videos were generated.")
+
+        self.publish_update_to_parameter("video_url", first_video_artifact)
+        for index in range(5):
+            if index == 0:
+                param_name = "video_url"
+            else:
+                param_name = f"video_url_{index}"
+            if index < len(video_artifacts):
+                self.publish_update_to_parameter(param_name, video_artifacts[index])
+            else:
+                self.publish_update_to_parameter(param_name, None)
+        self.publish_update_to_parameter("video_urls", video_artifacts)
+
+        return first_video_artifact

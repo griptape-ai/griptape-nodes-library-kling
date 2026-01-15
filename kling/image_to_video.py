@@ -1,10 +1,13 @@
+import base64
+import json
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import jwt
 import requests
-import json
-import base64
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact, VideoUrlArtifact
 from griptape_nodes.traits.options import Options
+from griptape_nodes.traits.slider import Slider
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterGroup
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -137,6 +140,16 @@ class KlingAI_ImageToVideo(ControlNode):
                 traits={Options(choices=[5, 10])},
             )
             Parameter(
+                name="num_videos",
+                input_types=["int"],
+                output_type="int",
+                type="int",
+                default_value=1,
+                tooltip="Number of videos to generate (1-5).",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Slider(min_val=1, max_val=5)},
+            )
+            Parameter(
                 name="sound",
                 input_types=["str"],
                 output_type="str",
@@ -199,21 +212,64 @@ class KlingAI_ImageToVideo(ControlNode):
                 name="video_url",
                 output_type="VideoUrlArtifact",
                 type="VideoUrlArtifact",
-                default_value=None,  # Will be populated by an artifact
+                default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
-                tooltip="Output URL of the generated video.",
+                tooltip="Output URL of the generated video (index 0).",
                 ui_options={"placeholder_text": "", "is_full_width": True},
             )
         )
         self.add_parameter(
             Parameter(
-                name="video_id",
-                output_type="str",
-                type="str",
+                name="video_url_1",
+                output_type="VideoUrlArtifact",
+                type="VideoUrlArtifact",
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
-                tooltip="The Task ID of the generated video from Kling AI.",
-                ui_options={"placeholder_text": ""},
+                tooltip="Output URL of the generated video (index 1).",
+                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True},
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="video_url_2",
+                output_type="VideoUrlArtifact",
+                type="VideoUrlArtifact",
+                default_value=None,
+                allowed_modes={ParameterMode.OUTPUT},
+                tooltip="Output URL of the generated video (index 2).",
+                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True},
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="video_url_3",
+                output_type="VideoUrlArtifact",
+                type="VideoUrlArtifact",
+                default_value=None,
+                allowed_modes={ParameterMode.OUTPUT},
+                tooltip="Output URL of the generated video (index 3).",
+                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True},
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="video_url_4",
+                output_type="VideoUrlArtifact",
+                type="VideoUrlArtifact",
+                default_value=None,
+                allowed_modes={ParameterMode.OUTPUT},
+                tooltip="Output URL of the generated video (index 4).",
+                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True},
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="video_urls",
+                type="list",
+                default_value=[],
+                output_type="list[VideoUrlArtifact]",
+                tooltip="List of generated videos (completion order).",
+                allowed_modes={ParameterMode.OUTPUT},
             )
         )
 
@@ -361,97 +417,84 @@ class KlingAI_ImageToVideo(ControlNode):
             error_message = "; ".join(str(e) for e in validation_errors)
             raise ValueError(f"Validation failed: {error_message}")
 
-        def generate_video() -> VideoUrlArtifact:
+        # Precompute payload inputs once to avoid repeated conversions in parallel jobs.
+        model_name = self.get_parameter_value("model_name")
+        duration = self.get_parameter_value("duration")
+        cfg_scale = self.get_parameter_value("cfg_scale")
+        mode = self.get_parameter_value("mode")
+        sound_val = self.get_parameter_value("sound")
+        prompt_val = self.get_parameter_value("prompt")
+        neg_prompt_val = self.get_parameter_value("negative_prompt")
+        callback_url_val = self.get_parameter_value("callback_url")
+        external_task_id_val = self.get_parameter_value("external_task_id")
+        image_api = self._get_image_api_data("image")
+        image_tail_api = self._get_image_api_data("image_tail")
+        static_mask_api = self._get_image_api_data("static_mask")
+        dynamic_masks_str = self.get_parameter_value("dynamic_masks")
+        dynamic_masks_payload = None
+        if dynamic_masks_str and dynamic_masks_str.strip():
+            try:
+                dynamic_masks_payload = json.loads(dynamic_masks_str)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON in dynamic_masks: {e}") from e
+
+        logger.info(
+            f"DEBUG: Parameter values - model_name: {model_name}, duration: {duration}, cfg_scale: {cfg_scale}, mode: {mode}"
+        )
+        logger.info(f"DEBUG: Image data - image_api present: {bool(image_api)}")
+        if image_api:
+            logger.info(f"DEBUG: image_api length: {len(image_api)}")
+        logger.info(f"DEBUG: Image data - image_tail_api present: {bool(image_tail_api)}")
+        if image_tail_api:
+            logger.info(f"DEBUG: image_tail_api length: {len(image_tail_api)}")
+        logger.info(f"DEBUG: Prompts - prompt: '{prompt_val}', negative_prompt: '{neg_prompt_val}'")
+
+        base_payload: dict[str, any] = {
+            "model_name": model_name,
+            "duration": duration,
+            "cfg_scale": cfg_scale,
+            "mode": mode,
+        }
+
+        # Add sound parameter for v2.6
+        if model_name == "kling-v2-6" and sound_val:
+            base_payload["sound"] = sound_val
+
+        if image_api:
+            base_payload["image"] = image_api
+        if image_tail_api:
+            base_payload["image_tail"] = image_tail_api
+        if prompt_val and prompt_val.strip():
+            base_payload["prompt"] = prompt_val.strip()
+        if neg_prompt_val and neg_prompt_val.strip():
+            base_payload["negative_prompt"] = neg_prompt_val.strip()
+        if static_mask_api:
+            base_payload["static_mask"] = static_mask_api
+        if dynamic_masks_payload is not None:
+            base_payload["dynamic_masks"] = dynamic_masks_payload
+        if callback_url_val and callback_url_val.strip():
+            base_payload["callback_url"] = callback_url_val.strip()
+
+        # Log payload without Base64 data to avoid terminal spam
+        log_payload = base_payload.copy()
+        if "image" in log_payload and not log_payload["image"].startswith(("http://", "https://")):
+            log_payload["image"] = f"<BASE64_DATA_LENGTH:{len(log_payload['image'])}>"
+        if "static_mask" in log_payload and not log_payload["static_mask"].startswith(("http://", "https://")):
+            log_payload["static_mask"] = f"<BASE64_DATA_LENGTH:{len(log_payload['static_mask'])}>"
+        if "image_tail" in log_payload and not log_payload["image_tail"].startswith(("http://", "https://")):
+            log_payload["image_tail"] = f"<BASE64_DATA_LENGTH:{len(log_payload['image_tail'])}>"
+
+        logger.info(f"Kling Image-to-Video API Request Payload: {json.dumps(log_payload, indent=2)}")
+
+        def generate_video_job(job_index: int) -> tuple[VideoUrlArtifact, str | None]:
             access_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
             secret_key = GriptapeNodes.SecretsManager().get_secret(SECRET_KEY_ENV_VAR)
             jwt_token = encode_jwt_token(access_key, secret_key)  # type: ignore[arg-type]
             headers = {"Content-Type": "application/json", "Authorization": f"Bearer {jwt_token}"}
 
-            # Log all parameter values for debugging
-            model_name = self.get_parameter_value("model_name")
-            duration = self.get_parameter_value("duration")
-            cfg_scale = self.get_parameter_value("cfg_scale")
-            mode = self.get_parameter_value("mode")
-
-            logger.info(
-                f"DEBUG: Parameter values - model_name: {model_name}, duration: {duration}, cfg_scale: {cfg_scale}, mode: {mode}"
-            )
-
-            payload: dict[str, any] = {
-                "model_name": model_name,
-                "duration": duration,
-                "cfg_scale": cfg_scale,
-                "mode": mode,
-            }
-
-            # Add sound parameter for v2.6
-            if model_name == "kling-v2-6":
-                sound_val = self.get_parameter_value("sound")
-                if sound_val:
-                    payload["sound"] = sound_val
-
-            image_api = self._get_image_api_data("image")
-
-            logger.info(f"DEBUG: Image data - image_api present: {bool(image_api)}")
-            if image_api:
-                logger.info(f"DEBUG: image_api length: {len(image_api) if image_api else 0}")
-                # Check if it's a URL or Base64
-                if image_api.startswith(("http://", "https://")):
-                    logger.info(f"DEBUG: image_api is URL: {image_api}")
-                else:
-                    logger.info(f"DEBUG: image_api is Base64 data (length: {len(image_api)})")
-                payload["image"] = image_api
-
-            image_tail_api = self._get_image_api_data("image_tail")
-            logger.info(f"DEBUG: Image data - image_tail_api present: {bool(image_tail_api)}")
-            if image_tail_api:
-                logger.info(f"DEBUG: image_tail_api length: {len(image_tail_api) if image_tail_api else 0}")
-                if image_tail_api.startswith(("http://", "https://")):
-                    logger.info(f"DEBUG: image_tail_api is URL: {image_tail_api}")
-                else:
-                    logger.info(f"DEBUG: image_tail_api is Base64 data (length: {len(image_tail_api)})")
-                payload["image_tail"] = image_tail_api
-
-            prompt_val = self.get_parameter_value("prompt")
-            neg_prompt_val = self.get_parameter_value("negative_prompt")
-
-            logger.info(f"DEBUG: Prompts - prompt: '{prompt_val}', negative_prompt: '{neg_prompt_val}'")
-
-            if prompt_val and prompt_val.strip():
-                payload["prompt"] = prompt_val.strip()
-            if neg_prompt_val and neg_prompt_val.strip():
-                payload["negative_prompt"] = neg_prompt_val.strip()
-
-            # Masks - mutually exclusive with camera control (checked in validate_node)
-            static_mask_api = self._get_image_api_data("static_mask")
-            if static_mask_api:
-                payload["static_mask"] = static_mask_api
-
-            dynamic_masks_str = self.get_parameter_value("dynamic_masks")
-            if dynamic_masks_str and dynamic_masks_str.strip():
-                try:
-                    payload["dynamic_masks"] = json.loads(dynamic_masks_str)
-                except json.JSONDecodeError as e:  # Should be caught by validate_node
-                    raise ValueError(f"Invalid JSON in dynamic_masks: {e}") from e
-
-            callback_url_val = self.get_parameter_value("callback_url")
-            if callback_url_val and callback_url_val.strip():
-                payload["callback_url"] = callback_url_val.strip()
-
-            external_task_id_val = self.get_parameter_value("external_task_id")
+            payload = base_payload.copy()
             if external_task_id_val and external_task_id_val.strip():
-                payload["external_task_id"] = external_task_id_val.strip()
-
-            # Log payload without Base64 data to avoid terminal spam
-            log_payload = payload.copy()
-            if "image" in log_payload and not log_payload["image"].startswith(("http://", "https://")):
-                log_payload["image"] = f"<BASE64_DATA_LENGTH:{len(log_payload['image'])}>"
-            if "static_mask" in log_payload and not log_payload["static_mask"].startswith(("http://", "https://")):
-                log_payload["static_mask"] = f"<BASE64_DATA_LENGTH:{len(log_payload['static_mask'])}>"
-            if "image_tail" in log_payload and not log_payload["image_tail"].startswith(("http://", "https://")):
-                log_payload["image_tail"] = f"<BASE64_DATA_LENGTH:{len(log_payload['image_tail'])}>"
-
-            logger.info(f"Kling Image-to-Video API Request Payload: {json.dumps(log_payload, indent=2)}")
+                payload["external_task_id"] = f"{external_task_id_val.strip()}-{job_index}"
             response = requests.post(BASE_URL, headers=headers, json=payload, timeout=30)
             # Enhanced debugging for API errors
             logger.info(f"Initial response status: {response.status_code}")
@@ -459,7 +502,7 @@ class KlingAI_ImageToVideo(ControlNode):
             logger.info(f"Initial response text: {response.text}")
             try:
                 response.raise_for_status()  # Raise HTTPError for bad responses (4XX or 5XX)
-            except requests.exceptions.HTTPError as e:
+            except requests.exceptions.HTTPError:
                 logger.error(f"HTTP Error {response.status_code}: {response.text}")
                 if response.status_code == 400:
                     try:
@@ -532,20 +575,64 @@ class KlingAI_ImageToVideo(ControlNode):
             except requests.exceptions.RequestException as e:
                 raise RuntimeError(f"Failed to download generated video: {e}") from e
 
-            filename = f"kling_image_to_video_{int(time.time())}.mp4"
+            timestamp = int(time.time() * 1000)
+            filename = f"kling_image_to_video_{timestamp}_{job_index}.mp4"
             static_files_manager = GriptapeNodes.StaticFilesManager()
             saved_url = static_files_manager.save_static_file(video_bytes, filename, ExistingFilePolicy.CREATE_NEW)
 
             # Create VideoUrlArtifact from the saved URL
             video_artifact = VideoUrlArtifact(saved_url)
-            self.publish_update_to_parameter("video_url", video_artifact)
-            if actual_video_id:  # Publish the correct video ID if found
-                self.publish_update_to_parameter("video_id", actual_video_id)
             logger.info(f"Saved video to static storage as {filename}. URL: {saved_url}")
             logger.info(f"Video ID: {actual_video_id}")  # Added logging for actual_video_id
-            return video_artifact
+            return video_artifact, actual_video_id
 
-        return generate_video()
+        num_videos = self.get_parameter_value("num_videos")
+        if num_videos is None:
+            num_videos = 1
+
+        logger.info(f"Generating {num_videos} video(s) in parallel.")
+
+        video_artifacts: list[VideoUrlArtifact] = []
+        first_video_artifact = None
+
+        if num_videos == 1:
+            result_artifact, _ = generate_video_job(1)
+            video_artifacts.append(result_artifact)
+            first_video_artifact = result_artifact
+        else:
+            with ThreadPoolExecutor(max_workers=num_videos) as executor:
+                futures = []
+                for job_index in range(num_videos):
+                    futures.append(executor.submit(generate_video_job, job_index + 1))
+
+                for future in as_completed(futures):
+                    try:
+                        result_artifact, _ = future.result()
+                    except Exception:
+                        for pending_future in futures:
+                            pending_future.cancel()
+                        raise
+
+                    video_artifacts.append(result_artifact)
+                    if first_video_artifact is None:
+                        first_video_artifact = result_artifact
+
+        if first_video_artifact is None:
+            raise RuntimeError("No videos were generated.")
+
+        self.publish_update_to_parameter("video_url", first_video_artifact)
+        for index in range(5):
+            if index == 0:
+                param_name = "video_url"
+            else:
+                param_name = f"video_url_{index}"
+            if index < len(video_artifacts):
+                self.publish_update_to_parameter(param_name, video_artifacts[index])
+            else:
+                self.publish_update_to_parameter(param_name, None)
+        self.publish_update_to_parameter("video_urls", video_artifacts)
+
+        return first_video_artifact
 
     def after_value_set(
         self, parameter: Parameter, value: any, modified_parameters_set: set[str] | None = None
@@ -595,3 +682,15 @@ class KlingAI_ImageToVideo(ControlNode):
             # Add all potentially modified parameters to the set if provided
             if modified_parameters_set is not None:
                 modified_parameters_set.update(["static_mask", "dynamic_masks", "mode", "duration", "sound"])
+        if parameter.name == "num_videos":
+            num_videos = self.get_parameter_value("num_videos")
+            if num_videos is None:
+                num_videos = 1
+            for index in range(1, 5):
+                param_name = f"video_url_{index}"
+                if num_videos > index:
+                    self.show_parameter_by_name(param_name)
+                else:
+                    self.hide_parameter_by_name(param_name)
+            if modified_parameters_set is not None:
+                modified_parameters_set.update([f"video_url_{index}" for index in range(1, 5)])
