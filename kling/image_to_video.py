@@ -209,6 +209,61 @@ class KlingAI_ImageToVideo(ControlNode):
         # Output Parameter
         self.add_parameter(
             Parameter(
+                name="video_url",
+                output_type="VideoUrlArtifact",
+                type="VideoUrlArtifact",
+                default_value=None,
+                allowed_modes={ParameterMode.OUTPUT},
+                tooltip="Output URL of the generated video (index 0).",
+                ui_options={"placeholder_text": "", "is_full_width": True},
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="video_url_1",
+                output_type="VideoUrlArtifact",
+                type="VideoUrlArtifact",
+                default_value=None,
+                allowed_modes={ParameterMode.OUTPUT},
+                tooltip="Output URL of the generated video (index 1).",
+                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True},
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="video_url_2",
+                output_type="VideoUrlArtifact",
+                type="VideoUrlArtifact",
+                default_value=None,
+                allowed_modes={ParameterMode.OUTPUT},
+                tooltip="Output URL of the generated video (index 2).",
+                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True},
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="video_url_3",
+                output_type="VideoUrlArtifact",
+                type="VideoUrlArtifact",
+                default_value=None,
+                allowed_modes={ParameterMode.OUTPUT},
+                tooltip="Output URL of the generated video (index 3).",
+                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True},
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="video_url_4",
+                output_type="VideoUrlArtifact",
+                type="VideoUrlArtifact",
+                default_value=None,
+                allowed_modes={ParameterMode.OUTPUT},
+                tooltip="Output URL of the generated video (index 4).",
+                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True},
+            )
+        )
+        self.add_parameter(
+            Parameter(
                 name="video_urls",
                 type="list",
                 default_value=[],
@@ -539,13 +594,11 @@ class KlingAI_ImageToVideo(ControlNode):
 
         video_artifacts: list[VideoUrlArtifact] = []
         first_video_artifact = None
-        first_video_id = None
 
         if num_videos == 1:
-            result_artifact, result_video_id = generate_video_job(1)
+            result_artifact, _ = generate_video_job(1)
             video_artifacts.append(result_artifact)
             first_video_artifact = result_artifact
-            first_video_id = result_video_id
         else:
             with ThreadPoolExecutor(max_workers=num_videos) as executor:
                 futures = []
@@ -554,7 +607,7 @@ class KlingAI_ImageToVideo(ControlNode):
 
                 for future in as_completed(futures):
                     try:
-                        result_artifact, result_video_id = future.result()
+                        result_artifact, _ = future.result()
                     except Exception:
                         for pending_future in futures:
                             pending_future.cancel()
@@ -563,12 +616,20 @@ class KlingAI_ImageToVideo(ControlNode):
                     video_artifacts.append(result_artifact)
                     if first_video_artifact is None:
                         first_video_artifact = result_artifact
-                        first_video_id = result_video_id
 
         if first_video_artifact is None:
             raise RuntimeError("No videos were generated.")
 
-        self.publish_update_to_parameter("video_url_0", first_video_artifact)
+        self.publish_update_to_parameter("video_url", first_video_artifact)
+        for index in range(5):
+            if index == 0:
+                param_name = "video_url"
+            else:
+                param_name = f"video_url_{index}"
+            if index < len(video_artifacts):
+                self.publish_update_to_parameter(param_name, video_artifacts[index])
+            else:
+                self.publish_update_to_parameter(param_name, None)
         self.publish_update_to_parameter("video_urls", video_artifacts)
 
         return first_video_artifact

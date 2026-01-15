@@ -167,7 +167,7 @@ class KlingAI_TextToVideo(ControlNode):
         self.add_node_element(callback_group)
         self.add_parameter(
             Parameter(
-                name="video_url_0",
+                name="video_url",
                 type="VideoUrlArtifact",
                 output_type="VideoUrlArtifact",
                 default_value=None,
@@ -494,9 +494,12 @@ class KlingAI_TextToVideo(ControlNode):
         if first_video_artifact is None:
             raise RuntimeError("No videos were generated.")
 
-        self.publish_update_to_parameter("video_url_0", first_video_artifact)
+        self.publish_update_to_parameter("video_url", first_video_artifact)
         for index in range(5):
-            param_name = f"video_url_{index}"
+            if index == 0:
+                param_name = "video_url"
+            else:
+                param_name = f"video_url_{index}"
             if index < len(video_artifacts):
                 self.publish_update_to_parameter(param_name, video_artifacts[index])
             else:

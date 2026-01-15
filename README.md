@@ -39,7 +39,7 @@ Generates a video from a text prompt.
 | `camera_config_tilt`     | `float` | Tilt (rotation around y-axis, -10 to 10). Use if `camera_control_type` is `simple`.                          | `0.0`           |
 | `camera_config_roll`     | `float` | Roll (rotation around z-axis, -10 to 10). Use if `camera_control_type` is `simple`.                           | `0.0`           |
 | `camera_config_zoom`     | `float` | Zoom (-10 to 10). Use if `camera_control_type` is `simple`.                                                  | `0.0`           |
-| `video_url_0`             | `VideoUrlArtifact`       | **Output:** Video URL (index 0).                                                                                                                                                                                              | `None`        |
+| `video_url`             | `VideoUrlArtifact`       | **Output:** Video URL (index 0).                                                                                                                                                                                              | `None`        |
 | `video_url_1`             | `VideoUrlArtifact`       | **Output:** Video URL (index 1).                                                                                                                                                                                              | `None`        |
 | `video_url_2`             | `VideoUrlArtifact`       | **Output:** Video URL (index 2).                                                                                                                                                                                              | `None`        |
 | `video_url_3`             | `VideoUrlArtifact`       | **Output:** Video URL (index 3).                                                                                                                                                                                              | `None`        |
@@ -49,7 +49,7 @@ Generates a video from a text prompt.
 *Note: `Callback` and `Camera Controls` parameters are grouped and may be collapsed by default in the UI.*
 
 **Multiple video generation:**  
-Set `num_videos` to generate multiple videos in parallel. The first completed video is exposed in `video_url_0`, while all completed videos are returned in `video_urls` in completion order. When `num_videos` is `1`, `video_urls` contains a single item matching `video_url_0`.
+Set `num_videos` to generate multiple videos in parallel. The first completed video is exposed in `video_url`, while all completed videos are returned in `video_urls` in completion order. When `num_videos` is `1`, `video_urls` contains a single item matching `video_url`.
 
 ### Kling AI Image to Video (`KlingAI_ImageToVideo`)
 
@@ -79,7 +79,7 @@ Generates a video from a reference image and optional text prompts.
 | `camera_config_zoom`      | `float`                       | Camera zoom movement (-10 to 10). Use if type is `simple`.                                                                                | `0.0`           |
 | `callback_url`            | `str`                         | Callback notification address for task status changes.                                                                                    | `""`            |
 | `external_task_id`        | `str`                         | Customized Task ID (must be unique within user account).                                                                                  | `""`            |
-| `video_url_0`             | `VideoUrlArtifact`       | **Output:** Output URL of the generated video (index 0).                                                                                                                                                                      | `None`        |
+| `video_url`             | `VideoUrlArtifact`       | **Output:** Output URL of the generated video (index 0).                                                                                                                                                                      | `None`        |
 | `video_url_1`             | `VideoUrlArtifact`       | **Output:** Output URL of the generated video (index 1).                                                                                                                                                                      | `None`        |
 | `video_url_2`             | `VideoUrlArtifact`       | **Output:** Output URL of the generated video (index 2).                                                                                                                                                                      | `None`        |
 | `video_url_3`             | `VideoUrlArtifact`       | **Output:** Output URL of the generated video (index 3).                                                                                                                                                                      | `None`        |
@@ -89,7 +89,7 @@ Generates a video from a reference image and optional text prompts.
 *Note: `Image Inputs`, `Prompts`, `Generation Settings`, `Masks`, `Camera Controls`, and `Callback` parameters are grouped and may be collapsed by default in the UI.*
 
 **Multiple video generation:**  
-Set `num_videos` to generate multiple videos in parallel. The first completed video is exposed in `video_url_0`, while all completed videos are returned in `video_urls` in completion order. When `num_videos` is `1`, `video_urls` contains a single item matching `video_url_0`.
+Set `num_videos` to generate multiple videos in parallel. The first completed video is exposed in `video_url`, while all completed videos are returned in `video_urls` in completion order. When `num_videos` is `1`, `video_urls` contains a single item matching `video_url`.
 
 ### Kling AI Video Extension (`KlingAI_VideoExtension`)
 
