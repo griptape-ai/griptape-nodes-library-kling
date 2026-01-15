@@ -189,6 +189,61 @@ class KlingAI_TextToVideo(ControlNode):
         )
         self.add_parameter(
             Parameter(
+                name="video_url_0",
+                type="VideoUrlArtifact",
+                output_type="VideoUrlArtifact",
+                default_value=None,
+                allowed_modes={ParameterMode.OUTPUT},
+                tooltip="Video URL (index 0).",
+                ui_options={"placeholder_text": "", "is_full_width": True}
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="video_url_1",
+                type="VideoUrlArtifact",
+                output_type="VideoUrlArtifact",
+                default_value=None,
+                allowed_modes={ParameterMode.OUTPUT},
+                tooltip="Video URL (index 1).",
+                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True}
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="video_url_2",
+                type="VideoUrlArtifact",
+                output_type="VideoUrlArtifact",
+                default_value=None,
+                allowed_modes={ParameterMode.OUTPUT},
+                tooltip="Video URL (index 2).",
+                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True}
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="video_url_3",
+                type="VideoUrlArtifact",
+                output_type="VideoUrlArtifact",
+                default_value=None,
+                allowed_modes={ParameterMode.OUTPUT},
+                tooltip="Video URL (index 3).",
+                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True}
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="video_url_4",
+                type="VideoUrlArtifact",
+                output_type="VideoUrlArtifact",
+                default_value=None,
+                allowed_modes={ParameterMode.OUTPUT},
+                tooltip="Video URL (index 4).",
+                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True}
+            )
+        )
+        self.add_parameter(
+            Parameter(
                 name="video_urls",
                 type="list",
                 default_value=[],
@@ -278,6 +333,16 @@ class KlingAI_TextToVideo(ControlNode):
                 self.hide_parameter_by_name("sound")  # Other models don't support sound
                 if modified_parameters_set is not None:
                     modified_parameters_set.update(["mode", "aspect_ratio", "duration", "sound"])
+        if parameter.name == "num_videos":
+            num_videos = self.get_parameter_value("num_videos")
+            if num_videos is None:
+                num_videos = 1
+            for index in range(1, 5):
+                param_name = f"video_url_{index}"
+                if num_videos > index:
+                    self.show_parameter_by_name(param_name)
+                else:
+                    self.hide_parameter_by_name(param_name)
 
     def process(self) -> AsyncResult[None]:
         yield lambda: self._process()
@@ -457,6 +522,12 @@ class KlingAI_TextToVideo(ControlNode):
         self.publish_update_to_parameter("video_url", first_video_artifact)
         if first_video_id:
             self.publish_update_to_parameter("video_id", first_video_id)
+        for index in range(5):
+            param_name = f"video_url_{index}"
+            if index < len(video_artifacts):
+                self.publish_update_to_parameter(param_name, video_artifacts[index])
+            else:
+                self.publish_update_to_parameter(param_name, None)
         self.publish_update_to_parameter("video_urls", video_artifacts)
 
         return first_video_artifact
