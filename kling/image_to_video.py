@@ -209,28 +209,6 @@ class KlingAI_ImageToVideo(ControlNode):
         # Output Parameter
         self.add_parameter(
             Parameter(
-                name="video_url",
-                output_type="VideoUrlArtifact",
-                type="VideoUrlArtifact",
-                default_value=None,  # Will be populated by an artifact
-                allowed_modes={ParameterMode.OUTPUT},
-                tooltip="Output URL of the generated video.",
-                ui_options={"placeholder_text": "", "is_full_width": True},
-            )
-        )
-        self.add_parameter(
-            Parameter(
-                name="video_id",
-                output_type="str",
-                type="str",
-                default_value=None,
-                allowed_modes={ParameterMode.OUTPUT},
-                tooltip="The Task ID of the generated video from Kling AI.",
-                ui_options={"placeholder_text": ""},
-            )
-        )
-        self.add_parameter(
-            Parameter(
                 name="video_urls",
                 type="list",
                 default_value=[],
@@ -590,9 +568,7 @@ class KlingAI_ImageToVideo(ControlNode):
         if first_video_artifact is None:
             raise RuntimeError("No videos were generated.")
 
-        self.publish_update_to_parameter("video_url", first_video_artifact)
-        if first_video_id:
-            self.publish_update_to_parameter("video_id", first_video_id)
+        self.publish_update_to_parameter("video_url_0", first_video_artifact)
         self.publish_update_to_parameter("video_urls", video_artifacts)
 
         return first_video_artifact

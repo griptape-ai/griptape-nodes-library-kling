@@ -167,28 +167,6 @@ class KlingAI_TextToVideo(ControlNode):
         self.add_node_element(callback_group)
         self.add_parameter(
             Parameter(
-                name="video_url",
-                type="VideoUrlArtifact",
-                output_type="VideoUrlArtifact",
-                default_value=None,
-                allowed_modes={ParameterMode.OUTPUT},
-                tooltip="Video URL",
-                ui_options={"placeholder_text": "", "is_full_width": True}
-            )
-        )
-        self.add_parameter(
-            Parameter(
-                name="video_id",
-                output_type="str",
-                type="str",
-                default_value=None,
-                allowed_modes={ParameterMode.OUTPUT},
-                tooltip="The Task ID of the generated video from Kling AI.",
-                ui_options={"placeholder_text": "", "is_full_width": True}
-            )
-        )
-        self.add_parameter(
-            Parameter(
                 name="video_url_0",
                 type="VideoUrlArtifact",
                 output_type="VideoUrlArtifact",
@@ -490,13 +468,11 @@ class KlingAI_TextToVideo(ControlNode):
 
         video_artifacts: list[VideoUrlArtifact] = []
         first_video_artifact = None
-        first_video_id = None
 
         if num_videos == 1:
-            result_artifact, result_video_id = generate_video_job(1)
+            result_artifact, _ = generate_video_job(1)
             video_artifacts.append(result_artifact)
             first_video_artifact = result_artifact
-            first_video_id = result_video_id
         else:
             with ThreadPoolExecutor(max_workers=num_videos) as executor:
                 futures = []
@@ -505,7 +481,7 @@ class KlingAI_TextToVideo(ControlNode):
 
                 for future in as_completed(futures):
                     try:
-                        result_artifact, result_video_id = future.result()
+                        result_artifact, _ = future.result()
                     except Exception:
                         for pending_future in futures:
                             pending_future.cancel()
@@ -514,14 +490,11 @@ class KlingAI_TextToVideo(ControlNode):
                     video_artifacts.append(result_artifact)
                     if first_video_artifact is None:
                         first_video_artifact = result_artifact
-                        first_video_id = result_video_id
-
+            
         if first_video_artifact is None:
             raise RuntimeError("No videos were generated.")
 
-        self.publish_update_to_parameter("video_url", first_video_artifact)
-        if first_video_id:
-            self.publish_update_to_parameter("video_id", first_video_id)
+        self.publish_update_to_parameter("video_url_0", first_video_artifact)
         for index in range(5):
             param_name = f"video_url_{index}"
             if index < len(video_artifacts):
