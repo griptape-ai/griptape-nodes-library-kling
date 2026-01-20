@@ -7,6 +7,9 @@ import requests
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact, VideoUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
@@ -45,11 +48,8 @@ class KlingAI_MotionControl(SuccessFailureNode):
         self.description = "Generates a video using Kling Motion Control (image + motion reference)."
 
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="prompt",
-                input_types=["str"],
-                output_type="str",
-                type="str",
                 default_value="",
                 tooltip="Optional text prompt for additional motion guidance (max 2500 chars)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -85,20 +85,15 @@ class KlingAI_MotionControl(SuccessFailureNode):
 
         # Generation Settings Group
         with ParameterGroup(name="Generation Settings") as gen_settings_group:
-            Parameter(
+            ParameterBool(
                 name="keep_original_sound",
-                input_types=["bool"],
-                type="bool",
                 default_value=True,
                 tooltip="Keep original video sound",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "keep original sound"},
             )
-            Parameter(
+            ParameterString(
                 name="character_orientation",
-                input_types=["str"],
-                output_type="str",
-                type="str",
                 default_value="video",
                 tooltip=(
                     "Character orientation: 'image' matches image orientation (max 10s video), "
@@ -108,11 +103,8 @@ class KlingAI_MotionControl(SuccessFailureNode):
                 traits={Options(choices=["image", "video"])},
                 ui_options={"display_name": "character orientation"},
             )
-            Parameter(
+            ParameterString(
                 name="mode",
-                input_types=["str"],
-                output_type="str",
-                type="str",
                 default_value="pro",
                 tooltip="Video generation mode: 'std' (Standard - cost-effective), 'pro' (Professional - higher quality)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -122,20 +114,16 @@ class KlingAI_MotionControl(SuccessFailureNode):
 
         # Outputs
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="generation_id",
-                output_type="str",
-                type="str",
                 tooltip="Kling task id",
                 allowed_modes={ParameterMode.OUTPUT},
                 hide=True,
             )
         )
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="provider_response",
-                output_type="dict",
-                type="dict",
                 tooltip="Verbatim response from API (latest polling response)",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"hide_property": True},
@@ -154,10 +142,8 @@ class KlingAI_MotionControl(SuccessFailureNode):
             )
         )
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="kling_video_id",
-                output_type="str",
-                type="str",
                 tooltip="The video ID from Kling AI",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"placeholder_text": "The Kling AI video ID"},
