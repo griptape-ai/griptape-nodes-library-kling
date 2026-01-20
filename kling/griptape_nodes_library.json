@@ -79,6 +79,15 @@
                 "description": "Creates lip-sync videos by synchronizing speech to video using Kling AI.",
                 "display_name": "Kling Lip-Sync"
             }
+        },
+        {
+            "class_name": "KlingAI_MotionControl",
+            "file_path": "motion_control.py",
+            "metadata": {
+                "category": "video/kling ai",
+                "description": "Transfers motion from a reference video to a reference image using Kling Motion Control.",
+                "display_name": "Kling Motion Control"
+            }
         }
     ]
 }

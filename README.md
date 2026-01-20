@@ -130,6 +130,27 @@ Creates lip-sync videos by synchronizing speech to video. Supports both Kling AI
 
 *Note: `Video Input`, `Voice Settings`, `Text-to-Speech Settings`, and `Callback` parameters are grouped and may be collapsed by default in the UI.*
 
+### Kling AI Motion Control (`KlingAI_MotionControl`)
+
+Transfers motion from a reference video to a reference image to create a new video.
+
+| Parameter                | Type               | Description                                                                 | Default Value |
+|--------------------------|--------------------|-----------------------------------------------------------------------------|---------------|
+| `prompt`                 | `str`              | Optional text prompt for additional motion guidance (max 2500 chars).       | `""`          |
+| `reference_image`        | `ImageArtifact` / `ImageUrlArtifact` | Reference image with character (required). Supports .jpg/.jpeg/.png, max 10MB. |               |
+| `reference_video`        | `VideoUrlArtifact` | Reference video with actions to transfer (required). Supports .mp4/.mov, max 100MB. |               |
+| `keep_original_sound`    | `bool`             | Keep original video sound.                                                  | `True`        |
+| `character_orientation`  | `str`              | Orientation: `image` (max 10s video) or `video` (max 30s video).             | `video`       |
+| `mode`                   | `str`              | Video generation mode (`std`: Standard, `pro`: Professional).               | `pro`         |
+| `generation_id`          | `str`              | **Output:** Kling task ID.                                                  | `""`          |
+| `provider_response`      | `dict`             | **Output:** Verbatim response from API (latest polling response).           | `None`        |
+| `video_url`              | `VideoUrlArtifact` | **Output:** Saved video URL.                                                | `None`        |
+| `kling_video_id`         | `str`              | **Output:** The generated video ID from Kling AI.                            | `""`          |
+| `was_successful`         | `bool`             | **Output:** Whether the generation succeeded.                               |               |
+| `result_details`         | `str`              | **Output:** Details about the generation result or error.                   |               |
+
+*Note: `Image Input`, `Video Input`, `Generation Settings`, and `Status` parameters are grouped and may be collapsed by default in the UI.*
+
 ## Add your library to your installed Engine! 
 
 If you haven't already installed your Griptape Nodes engine, follow the installation steps [HERE](https://github.com/griptape-ai/griptape-nodes).
