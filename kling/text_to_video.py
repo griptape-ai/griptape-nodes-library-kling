@@ -57,7 +57,7 @@ class KlingAI_TextToVideo(ControlNode):
                 default_value="kling-v1-6",
                 tooltip="Model Name",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["kling-v1-6", "kling-v2-master", "kling-v2-1-master", "kling-v2-5-turbo", "kling-v2-6"])}
+                traits={Options(choices=["kling-v1-6", "kling-v2-master", "kling-v2-1-master", "kling-v2-5-turbo", "kling-v2-6", "kling-v3"])}
             )
         )
         self.add_parameter(
