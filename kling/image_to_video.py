@@ -57,6 +57,7 @@ class KlingAI_ImageToVideo(ControlNode):
                             "kling-v2-1-master",
                             "kling-v2-5-turbo",
                             "kling-v2-6",
+                            "kling-v3"
                         ]
                     )
                 },
