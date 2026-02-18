@@ -44,20 +44,20 @@ class KlingAI_ImageToVideo(ControlNode):
                 input_types=["str"],
                 output_type="str",
                 type="str",
-                default_value="kling-v2-1",
+                default_value="kling-v3",
                 tooltip="Model Name for generation.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={
                     Options(
                         choices=[
-                            "kling-v1",
-                            "kling-v1-5",
-                            "kling-v2-master",
-                            "kling-v2-1",
-                            "kling-v2-1-master",
-                            "kling-v2-5-turbo",
+                            "kling-v3",
                             "kling-v2-6",
-                            "kling-v3"
+                            "kling-v2-5-turbo",
+                            "kling-v2-1-master",
+                            "kling-v2-1",
+                            "kling-v2-master",
+                            "kling-v1-5",
+                            "kling-v1",
                         ]
                     )
                 },
@@ -131,6 +131,17 @@ class KlingAI_ImageToVideo(ControlNode):
                 traits={Options(choices=["std", "pro"])},
             )
             Parameter(
+                name="klingv3_duration",
+                input_types=["int"],
+                output_type="int",
+                type="int",
+                default_value=5,
+                tooltip="Video Length in seconds (kling-v3: 3-15s).",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Slider(min_val=3, max_val=15)},
+                ui_options={"display_name": "Duration"},
+            )
+            Parameter(
                 name="duration",
                 input_types=["int"],
                 output_type="int",
@@ -139,6 +150,7 @@ class KlingAI_ImageToVideo(ControlNode):
                 tooltip="Video Length in seconds.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=[5, 10])},
+                hide=True,
             )
             Parameter(
                 name="num_videos",
@@ -160,6 +172,17 @@ class KlingAI_ImageToVideo(ControlNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["on", "off"])},
                 hide=True  # Hidden by default; shown only for kling-v2-6
+            )
+            Parameter(
+                name="polling_delay",
+                input_types=["int"],
+                output_type="int",
+                type="int",
+                default_value=10,
+                tooltip="Delay in seconds between polling the Kling API for job completion.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Slider(min_val=5, max_val=30)},
+                hide=True,
             )
         self.add_node_element(gen_settings_group)
 
@@ -359,7 +382,11 @@ class KlingAI_ImageToVideo(ControlNode):
         # Minimal validation - UI should prevent most issues
         model = self.get_parameter_value("model_name")
         mode = self.get_parameter_value("mode")
-        duration = self.get_parameter_value("duration")
+
+        if model == "kling-v3":
+            duration = self.get_parameter_value("klingv3_duration")
+        else:
+            duration = self.get_parameter_value("duration")
 
         # Only validate if somehow invalid combinations slip through UI
         if model == "kling-v1" and duration != 5:
@@ -376,6 +403,11 @@ class KlingAI_ImageToVideo(ControlNode):
                 errors.append(ValueError("kling-v2-6 only supports pro mode"))
             if duration not in [5, 10]:
                 errors.append(ValueError("kling-v2-6 only supports durations 5 or 10 seconds"))
+
+        # kling-v3 constraints: duration 3-15s
+        if model == "kling-v3":
+            if not (3 <= duration <= 15):
+                errors.append(ValueError("kling-v3 only supports durations from 3 to 15 seconds"))
 
         cfg_scale_val = self.get_parameter_value("cfg_scale")
         if not (0 <= cfg_scale_val <= 1):  # type: ignore[operator]
@@ -396,12 +428,13 @@ class KlingAI_ImageToVideo(ControlNode):
             end_frame_supported = (
                 (model == "kling-v2-1" and mode == "pro" and duration in [5, 10]) or
                 (model == "kling-v2-5-turbo" and mode == "pro" and duration in [5, 10]) or
-                (model == "kling-v2-6" and mode == "pro" and duration in [5, 10])
+                (model == "kling-v2-6" and mode == "pro" and duration in [5, 10]) or
+                (model == "kling-v3")
             )
             if not end_frame_supported:
                 errors.append(
                     ValueError(
-                        "image_tail is only supported on models kling-v2-1, kling-v2-5-turbo, and kling-v2-6 with mode=pro and duration 5 or 10."
+                        "image_tail is only supported on models kling-v2-1, kling-v2-5-turbo, kling-v2-6 (with mode=pro and duration 5 or 10), and kling-v3."
                     )
                 )
 
@@ -420,7 +453,10 @@ class KlingAI_ImageToVideo(ControlNode):
 
         # Precompute payload inputs once to avoid repeated conversions in parallel jobs.
         model_name = self.get_parameter_value("model_name")
-        duration = self.get_parameter_value("duration")
+        if model_name == "kling-v3":
+            duration = self.get_parameter_value("klingv3_duration")
+        else:
+            duration = self.get_parameter_value("duration")
         cfg_scale = self.get_parameter_value("cfg_scale")
         mode = self.get_parameter_value("mode")
         sound_val = self.get_parameter_value("sound")
@@ -457,8 +493,8 @@ class KlingAI_ImageToVideo(ControlNode):
             "mode": mode,
         }
 
-        # Add sound parameter for v2.6
-        if model_name == "kling-v2-6" and sound_val:
+        # Add sound parameter for models that support it
+        if model_name in ["kling-v2-6", "kling-v3"] and sound_val:
             base_payload["sound"] = sound_val
 
         if image_api:
@@ -520,11 +556,11 @@ class KlingAI_ImageToVideo(ControlNode):
             actual_video_id = None  # Initialize variable to store the actual video ID
 
             # Polling logic copied from KlingAI_TextToVideo
-            max_retries = 120  # e.g., 120 retries * 5 seconds = 10 minutes timeout
-            retry_delay = 5  # seconds
+            poll_delay = self.get_parameter_value("polling_delay")
+            max_retries = 120
             for attempt in range(max_retries):
                 try:
-                    time.sleep(retry_delay)
+                    time.sleep(poll_delay)
                     result_response = requests.get(poll_url, headers=headers, timeout=30)
                     result_response.raise_for_status()
                     result = result_response.json()
@@ -644,30 +680,33 @@ class KlingAI_ImageToVideo(ControlNode):
             self.show_parameter_by_name(["static_mask", "dynamic_masks"])
 
             # Model-specific UI restrictions
-            if value == "kling-v1":
+            if value == "kling-v3":
+                self.show_parameter_by_name(["mode", "klingv3_duration", "sound"])
+                self.hide_parameter_by_name("duration")
+            elif value == "kling-v1":
                 # kling-v1: only 5s duration, std or pro mode
                 self.show_parameter_by_name("mode")
-                self.hide_parameter_by_name(["duration", "sound"])
+                self.hide_parameter_by_name(["klingv3_duration", "duration", "sound"])
                 current_duration = self.get_parameter_value("duration")
                 if current_duration != 5:
                     self.set_parameter_value("duration", 5)
             elif value in ["kling-v1-5"]:
                 # kling-v1-5: only pro mode, either duration
-                self.hide_parameter_by_name(["mode", "sound"])
+                self.hide_parameter_by_name(["mode", "klingv3_duration", "sound"])
                 self.show_parameter_by_name("duration")
                 current_mode = self.get_parameter_value("mode")
                 if current_mode != "pro":
                     self.set_parameter_value("mode", "pro")
             elif value == "kling-v2-5-turbo":
                 # v2.5 turbo: pro-only, durations 5 or 10
-                self.hide_parameter_by_name(["mode", "sound"])
+                self.hide_parameter_by_name(["mode", "klingv3_duration", "sound"])
                 self.show_parameter_by_name("duration")
                 current_mode = self.get_parameter_value("mode")
                 if current_mode != "pro":
                     self.set_parameter_value("mode", "pro")
             elif value == "kling-v2-6":
                 # v2.6: pro-only, durations 5 or 10, supports sound
-                self.hide_parameter_by_name("mode")
+                self.hide_parameter_by_name(["mode", "klingv3_duration"])
                 self.show_parameter_by_name(["duration", "sound"])
                 current_mode = self.get_parameter_value("mode")
                 if current_mode != "pro":
@@ -678,11 +717,11 @@ class KlingAI_ImageToVideo(ControlNode):
             else:
                 # kling-v2+: all modes and durations available
                 self.show_parameter_by_name(["mode", "duration"])
-                self.hide_parameter_by_name("sound")
+                self.hide_parameter_by_name(["klingv3_duration", "sound"])
 
             # Add all potentially modified parameters to the set if provided
             if modified_parameters_set is not None:
-                modified_parameters_set.update(["static_mask", "dynamic_masks", "mode", "duration", "sound"])
+                modified_parameters_set.update(["static_mask", "dynamic_masks", "mode", "klingv3_duration", "duration", "sound"])
         if parameter.name == "num_videos":
             num_videos = self.get_parameter_value("num_videos")
             if num_videos is None:
