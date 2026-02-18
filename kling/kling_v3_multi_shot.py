@@ -2,6 +2,7 @@ from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.traits.widget import Widget
 
 
@@ -20,22 +21,18 @@ class KlingV3MultiShot(DataNode):
         super().__init__(name=name, metadata=node_metadata, **kwargs)
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="start_frame",
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                type="ImageArtifact",
                 tooltip="Starting frame for the video sequence",
-                allowed_modes={ParameterMode.INPUT},
+                allow_output=False,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="end_frame",
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                type="ImageArtifact",
                 tooltip="Ending frame for the video sequence",
-                allowed_modes={ParameterMode.INPUT},
+                allow_output=False,
             )
         )
 
