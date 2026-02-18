@@ -22,8 +22,8 @@ class KlingV3MultiShot(DataNode):
         self.add_parameter(
             Parameter(
                 name="start_frame",
-                input_types=["VideoUrlArtifact"],
-                type="VideoUrlArtifact",
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
+                type="ImageArtifact",
                 tooltip="Starting frame for the video sequence",
                 allowed_modes={ParameterMode.INPUT},
             )
@@ -32,8 +32,8 @@ class KlingV3MultiShot(DataNode):
         self.add_parameter(
             Parameter(
                 name="end_frame",
-                input_types=["VideoUrlArtifact"],
-                type="VideoUrlArtifact",
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
+                type="ImageArtifact",
                 tooltip="Ending frame for the video sequence",
                 allowed_modes={ParameterMode.INPUT},
             )
