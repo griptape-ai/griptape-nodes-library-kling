@@ -131,6 +131,17 @@ class KlingAI_ImageToVideo(ControlNode):
                 traits={Options(choices=["std", "pro"])},
             )
             Parameter(
+                name="klingv3_duration",
+                input_types=["int"],
+                output_type="int",
+                type="int",
+                default_value=5,
+                tooltip="Video Length in seconds (kling-v3: 3-15s).",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Slider(min_val=3, max_val=15)},
+                ui_options={"display_name": "Duration"},
+            )
+            Parameter(
                 name="duration",
                 input_types=["int"],
                 output_type="int",
@@ -139,6 +150,7 @@ class KlingAI_ImageToVideo(ControlNode):
                 tooltip="Video Length in seconds.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=[5, 10])},
+                hide=True,
             )
             Parameter(
                 name="num_videos",
@@ -359,7 +371,11 @@ class KlingAI_ImageToVideo(ControlNode):
         # Minimal validation - UI should prevent most issues
         model = self.get_parameter_value("model_name")
         mode = self.get_parameter_value("mode")
-        duration = self.get_parameter_value("duration")
+
+        if model == "kling-v3":
+            duration = self.get_parameter_value("klingv3_duration")
+        else:
+            duration = self.get_parameter_value("duration")
 
         # Only validate if somehow invalid combinations slip through UI
         if model == "kling-v1" and duration != 5:
@@ -426,7 +442,10 @@ class KlingAI_ImageToVideo(ControlNode):
 
         # Precompute payload inputs once to avoid repeated conversions in parallel jobs.
         model_name = self.get_parameter_value("model_name")
-        duration = self.get_parameter_value("duration")
+        if model_name == "kling-v3":
+            duration = self.get_parameter_value("klingv3_duration")
+        else:
+            duration = self.get_parameter_value("duration")
         cfg_scale = self.get_parameter_value("cfg_scale")
         mode = self.get_parameter_value("mode")
         sound_val = self.get_parameter_value("sound")
@@ -649,48 +668,34 @@ class KlingAI_ImageToVideo(ControlNode):
             # Show mask features for all models
             self.show_parameter_by_name(["static_mask", "dynamic_masks"])
 
-            # Swap duration trait: kling-v3 uses Slider(3-15), all others use Options([5, 10])
-            duration_param = self.get_parameter_by_name("duration")
-            if value != "kling-v3":
-                for t in duration_param.find_elements_by_type(Slider):
-                    duration_param.remove_trait(t)
-                if not duration_param.find_elements_by_type(Options):
-                    duration_param.add_trait(Options(choices=[5, 10]))
-
             # Model-specific UI restrictions
             if value == "kling-v3":
-                for t in duration_param.find_elements_by_type(Options):
-                    duration_param.remove_trait(t)
-                if not duration_param.find_elements_by_type(Slider):
-                    duration_param.add_trait(Slider(min_val=3, max_val=15))
-                self.show_parameter_by_name(["mode", "duration", "sound"])
-                current_duration = self.get_parameter_value("duration")
-                if current_duration is None or current_duration < 3 or current_duration > 15:
-                    self.set_parameter_value("duration", 5)
+                self.show_parameter_by_name(["mode", "klingv3_duration", "sound"])
+                self.hide_parameter_by_name("duration")
             elif value == "kling-v1":
                 # kling-v1: only 5s duration, std or pro mode
                 self.show_parameter_by_name("mode")
-                self.hide_parameter_by_name(["duration", "sound"])
+                self.hide_parameter_by_name(["klingv3_duration", "duration", "sound"])
                 current_duration = self.get_parameter_value("duration")
                 if current_duration != 5:
                     self.set_parameter_value("duration", 5)
             elif value in ["kling-v1-5"]:
                 # kling-v1-5: only pro mode, either duration
-                self.hide_parameter_by_name(["mode", "sound"])
+                self.hide_parameter_by_name(["mode", "klingv3_duration", "sound"])
                 self.show_parameter_by_name("duration")
                 current_mode = self.get_parameter_value("mode")
                 if current_mode != "pro":
                     self.set_parameter_value("mode", "pro")
             elif value == "kling-v2-5-turbo":
                 # v2.5 turbo: pro-only, durations 5 or 10
-                self.hide_parameter_by_name(["mode", "sound"])
+                self.hide_parameter_by_name(["mode", "klingv3_duration", "sound"])
                 self.show_parameter_by_name("duration")
                 current_mode = self.get_parameter_value("mode")
                 if current_mode != "pro":
                     self.set_parameter_value("mode", "pro")
             elif value == "kling-v2-6":
                 # v2.6: pro-only, durations 5 or 10, supports sound
-                self.hide_parameter_by_name("mode")
+                self.hide_parameter_by_name(["mode", "klingv3_duration"])
                 self.show_parameter_by_name(["duration", "sound"])
                 current_mode = self.get_parameter_value("mode")
                 if current_mode != "pro":
@@ -701,11 +706,11 @@ class KlingAI_ImageToVideo(ControlNode):
             else:
                 # kling-v2+: all modes and durations available
                 self.show_parameter_by_name(["mode", "duration"])
-                self.hide_parameter_by_name("sound")
+                self.hide_parameter_by_name(["klingv3_duration", "sound"])
 
             # Add all potentially modified parameters to the set if provided
             if modified_parameters_set is not None:
-                modified_parameters_set.update(["static_mask", "dynamic_masks", "mode", "duration", "sound"])
+                modified_parameters_set.update(["static_mask", "dynamic_masks", "mode", "klingv3_duration", "duration", "sound"])
         if parameter.name == "num_videos":
             num_videos = self.get_parameter_value("num_videos")
             if num_videos is None:

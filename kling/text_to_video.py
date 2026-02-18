@@ -109,6 +109,19 @@ class KlingAI_TextToVideo(ControlNode):
         )
         self.add_parameter(
             Parameter(
+                name="klingv3_duration",
+                input_types=["int"],
+                output_type="int",
+                type="int",
+                default_value=5,
+                tooltip="Video Length in seconds (kling-v3: 3-15s).",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Slider(min_val=3, max_val=15)},
+                ui_options={"display_name": "Duration"},
+            )
+        )
+        self.add_parameter(
+            Parameter(
                 name="duration",
                 input_types=["int"],
                 output_type="int",
@@ -116,7 +129,8 @@ class KlingAI_TextToVideo(ControlNode):
                 default_value=5,
                 tooltip="Video Length, unit: s (seconds)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=[5, 10])}
+                traits={Options(choices=[5, 10])},
+                hide=True,
             )
         )
         self.add_parameter(
@@ -278,8 +292,8 @@ class KlingAI_TextToVideo(ControlNode):
 
         # kling-v3 constraints: duration 3-15s
         if model == "kling-v3":
-            duration = self.get_parameter_value("duration")
-            if not (3 <= duration <= 15):
+            v3_duration = self.get_parameter_value("klingv3_duration")
+            if not (3 <= v3_duration <= 15):
                 errors.append(ValueError("kling-v3 only supports durations from 3 to 15 seconds"))
 
         return errors if errors else None
@@ -287,27 +301,14 @@ class KlingAI_TextToVideo(ControlNode):
     def after_value_set(self, parameter: Parameter, value: any, modified_parameters_set: set[str] | None = None) -> None:
         """Update parameter visibility based on model selection."""
         if parameter.name == "model_name":
-            # Swap duration trait: kling-v3 uses Slider(3-15), all others use Options([5, 10])
-            duration_param = self.get_parameter_by_name("duration")
-            if value != "kling-v3":
-                for t in duration_param.find_elements_by_type(Slider):
-                    duration_param.remove_trait(t)
-                if not duration_param.find_elements_by_type(Options):
-                    duration_param.add_trait(Options(choices=[5, 10]))
-
             if value == "kling-v3":
-                for t in duration_param.find_elements_by_type(Options):
-                    duration_param.remove_trait(t)
-                if not duration_param.find_elements_by_type(Slider):
-                    duration_param.add_trait(Slider(min_val=3, max_val=15))
-                self.show_parameter_by_name(["mode", "aspect_ratio", "duration", "sound"])
-                current_duration = self.get_parameter_value("duration")
-                if current_duration is None or current_duration < 3 or current_duration > 15:
-                    self.set_parameter_value("duration", 5)
+                self.show_parameter_by_name(["mode", "aspect_ratio", "klingv3_duration", "sound"])
+                self.hide_parameter_by_name("duration")
                 if modified_parameters_set is not None:
-                    modified_parameters_set.update(["mode", "aspect_ratio", "duration", "sound"])
+                    modified_parameters_set.update(["mode", "aspect_ratio", "klingv3_duration", "duration", "sound"])
             elif value == "kling-v2-5-turbo":
-                self.hide_parameter_by_name(["mode", "aspect_ratio"])  # pro-only, 1080p only
+                self.hide_parameter_by_name(["mode", "aspect_ratio", "klingv3_duration"])  # pro-only, 1080p only
+                self.show_parameter_by_name("duration")
                 current_mode = self.get_parameter_value("mode")
                 if current_mode != "pro":
                     self.set_parameter_value("mode", "pro")
@@ -319,9 +320,9 @@ class KlingAI_TextToVideo(ControlNode):
                     self.set_parameter_value("duration", 5)
                 self.hide_parameter_by_name("sound")  # v2-5-turbo doesn't support sound
                 if modified_parameters_set is not None:
-                    modified_parameters_set.update(["mode", "aspect_ratio", "duration", "sound"])
+                    modified_parameters_set.update(["mode", "aspect_ratio", "klingv3_duration", "duration", "sound"])
             elif value == "kling-v2-6":
-                self.hide_parameter_by_name("mode")  # pro-only
+                self.hide_parameter_by_name(["mode", "klingv3_duration"])  # pro-only
                 self.show_parameter_by_name(["aspect_ratio", "duration", "sound"])  # v2.6 supports sound
                 current_mode = self.get_parameter_value("mode")
                 if current_mode != "pro":
@@ -330,12 +331,12 @@ class KlingAI_TextToVideo(ControlNode):
                 if current_duration not in [5, 10]:
                     self.set_parameter_value("duration", 5)
                 if modified_parameters_set is not None:
-                    modified_parameters_set.update(["mode", "duration", "sound"])
+                    modified_parameters_set.update(["mode", "klingv3_duration", "duration", "sound"])
             else:
                 self.show_parameter_by_name(["mode", "aspect_ratio", "duration"])
-                self.hide_parameter_by_name("sound")  # Other models don't support sound
+                self.hide_parameter_by_name(["klingv3_duration", "sound"])  # Other models don't support sound
                 if modified_parameters_set is not None:
-                    modified_parameters_set.update(["mode", "aspect_ratio", "duration", "sound"])
+                    modified_parameters_set.update(["mode", "aspect_ratio", "klingv3_duration", "duration", "sound"])
         if parameter.name == "num_videos":
             num_videos = self.get_parameter_value("num_videos")
             if num_videos is None:
@@ -361,17 +362,21 @@ class KlingAI_TextToVideo(ControlNode):
 
             headers = {"Content-Type": "application/json", "Authorization": f"Bearer {jwt_token}"}
 
+            model_name = self.get_parameter_value("model_name")
+
+            if model_name == "kling-v3":
+                duration_value = self.get_parameter_value("klingv3_duration")
+            else:
+                duration_value = self.get_parameter_value("duration")
+
             payload = {
                 "prompt": prompt,
-                "model_name": self.get_parameter_value("model_name"),
-                "duration": self.get_parameter_value("duration"),
+                "model_name": model_name,
+                "duration": duration_value,
                 "cfg_scale": self.get_parameter_value("cfg_scale"),
                 "mode": self.get_parameter_value("mode"),
                 "aspect_ratio": self.get_parameter_value("aspect_ratio"),
             }
-
-            # Add sound parameter for models that support it
-            model_name = self.get_parameter_value("model_name")
             if model_name in ["kling-v2-6", "kling-v3"]:
                 sound_val = self.get_parameter_value("sound")
                 if sound_val:
