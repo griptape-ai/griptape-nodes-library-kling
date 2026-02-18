@@ -242,16 +242,19 @@ export default function MultiShotEditor(container, props) {
       `,
     });
     textarea.maxLength = MAX_DESCRIPTION_LENGTH;
-    textarea.textContent = shot.description || "";
     textarea.addEventListener("focus", () => {
       const len = shots[index].description.length;
       textarea.style.borderColor =
         len >= MAX_DESCRIPTION_LENGTH ? "#c44" : "#555";
     });
     textarea.addEventListener("blur", () => {
-      const len = shots[index].description.length;
+      shots[index].description = textarea.value;
+      const len = textarea.value.length;
       textarea.style.borderColor =
         len >= MAX_DESCRIPTION_LENGTH ? "#c44" : "#333";
+      counter.textContent = `${len} / ${MAX_DESCRIPTION_LENGTH}`;
+      counter.style.color = len >= MAX_DESCRIPTION_LENGTH ? "#c44" : "#555";
+      emitChange();
     });
     textarea.addEventListener("input", (e) => {
       shots[index].description = e.target.value;
@@ -260,7 +263,6 @@ export default function MultiShotEditor(container, props) {
         e.target.value.length >= MAX_DESCRIPTION_LENGTH ? "#c44" : "#555";
       textarea.style.borderColor =
         e.target.value.length >= MAX_DESCRIPTION_LENGTH ? "#c44" : "#555";
-      emitChange();
     });
     // Prevent node-level drag when interacting with the textarea
     textarea.addEventListener("pointerdown", (e) => e.stopPropagation());
