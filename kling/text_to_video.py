@@ -157,6 +157,19 @@ class KlingAI_TextToVideo(ControlNode):
                 traits={Options(choices=["on", "off"])}
             )
         )
+        self.add_parameter(
+            Parameter(
+                name="polling_delay",
+                input_types=["int"],
+                output_type="int",
+                type="int",
+                default_value=10,
+                tooltip="Delay in seconds between polling the Kling API for job completion.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Slider(min_val=5, max_val=30)},
+                hide=True,
+            )
+        )
         # Callback Parameters Group
         with ParameterGroup(name="Callback") as callback_group:
             Parameter(
@@ -417,11 +430,12 @@ class KlingAI_TextToVideo(ControlNode):
             video_url = None
             actual_video_id = None # Initialize variable to store the actual video ID
 
-            max_retries = 120  # 120 retries * 5 seconds = 10 minutes timeout
+            poll_delay = self.get_parameter_value("polling_delay")
+            max_retries = 120
             retry_count = 0
             
             while retry_count < max_retries:
-                time.sleep(5)  # Increased from 3 to 5 seconds
+                time.sleep(poll_delay)
                 retry_count += 1
                 
                 try:

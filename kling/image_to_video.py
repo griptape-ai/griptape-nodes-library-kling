@@ -173,6 +173,17 @@ class KlingAI_ImageToVideo(ControlNode):
                 traits={Options(choices=["on", "off"])},
                 hide=True  # Hidden by default; shown only for kling-v2-6
             )
+            Parameter(
+                name="polling_delay",
+                input_types=["int"],
+                output_type="int",
+                type="int",
+                default_value=10,
+                tooltip="Delay in seconds between polling the Kling API for job completion.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Slider(min_val=5, max_val=30)},
+                hide=True,
+            )
         self.add_node_element(gen_settings_group)
 
         # Masks Group
@@ -545,11 +556,11 @@ class KlingAI_ImageToVideo(ControlNode):
             actual_video_id = None  # Initialize variable to store the actual video ID
 
             # Polling logic copied from KlingAI_TextToVideo
-            max_retries = 120  # e.g., 120 retries * 5 seconds = 10 minutes timeout
-            retry_delay = 5  # seconds
+            poll_delay = self.get_parameter_value("polling_delay")
+            max_retries = 120
             for attempt in range(max_retries):
                 try:
-                    time.sleep(retry_delay)
+                    time.sleep(poll_delay)
                     result_response = requests.get(poll_url, headers=headers, timeout=30)
                     result_response.raise_for_status()
                     result = result_response.json()
