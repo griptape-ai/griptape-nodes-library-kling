@@ -44,20 +44,20 @@ class KlingAI_ImageToVideo(ControlNode):
                 input_types=["str"],
                 output_type="str",
                 type="str",
-                default_value="kling-v2-1",
+                default_value="kling-v3",
                 tooltip="Model Name for generation.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={
                     Options(
                         choices=[
-                            "kling-v1",
-                            "kling-v1-5",
-                            "kling-v2-master",
-                            "kling-v2-1",
-                            "kling-v2-1-master",
-                            "kling-v2-5-turbo",
+                            "kling-v3",
                             "kling-v2-6",
-                            "kling-v3"
+                            "kling-v2-5-turbo",
+                            "kling-v2-1-master",
+                            "kling-v2-1",
+                            "kling-v2-master",
+                            "kling-v1-5",
+                            "kling-v1",
                         ]
                     )
                 },
@@ -377,6 +377,11 @@ class KlingAI_ImageToVideo(ControlNode):
             if duration not in [5, 10]:
                 errors.append(ValueError("kling-v2-6 only supports durations 5 or 10 seconds"))
 
+        # kling-v3 constraints: duration 3-15s
+        if model == "kling-v3":
+            if not (3 <= duration <= 15):
+                errors.append(ValueError("kling-v3 only supports durations from 3 to 15 seconds"))
+
         cfg_scale_val = self.get_parameter_value("cfg_scale")
         if not (0 <= cfg_scale_val <= 1):  # type: ignore[operator]
             errors.append(ValueError("cfg_scale must be between 0.0 and 1.0."))
@@ -396,12 +401,13 @@ class KlingAI_ImageToVideo(ControlNode):
             end_frame_supported = (
                 (model == "kling-v2-1" and mode == "pro" and duration in [5, 10]) or
                 (model == "kling-v2-5-turbo" and mode == "pro" and duration in [5, 10]) or
-                (model == "kling-v2-6" and mode == "pro" and duration in [5, 10])
+                (model == "kling-v2-6" and mode == "pro" and duration in [5, 10]) or
+                (model == "kling-v3")
             )
             if not end_frame_supported:
                 errors.append(
                     ValueError(
-                        "image_tail is only supported on models kling-v2-1, kling-v2-5-turbo, and kling-v2-6 with mode=pro and duration 5 or 10."
+                        "image_tail is only supported on models kling-v2-1, kling-v2-5-turbo, kling-v2-6 (with mode=pro and duration 5 or 10), and kling-v3."
                     )
                 )
 
@@ -457,8 +463,8 @@ class KlingAI_ImageToVideo(ControlNode):
             "mode": mode,
         }
 
-        # Add sound parameter for v2.6
-        if model_name == "kling-v2-6" and sound_val:
+        # Add sound parameter for models that support it
+        if model_name in ["kling-v2-6", "kling-v3"] and sound_val:
             base_payload["sound"] = sound_val
 
         if image_api:
@@ -643,8 +649,25 @@ class KlingAI_ImageToVideo(ControlNode):
             # Show mask features for all models
             self.show_parameter_by_name(["static_mask", "dynamic_masks"])
 
+            # Swap duration trait: kling-v3 uses Slider(3-15), all others use Options([5, 10])
+            duration_param = self.get_parameter_by_name("duration")
+            if value != "kling-v3":
+                for t in duration_param.find_elements_by_type(Slider):
+                    duration_param.remove_trait(t)
+                if not duration_param.find_elements_by_type(Options):
+                    duration_param.add_trait(Options(choices=[5, 10]))
+
             # Model-specific UI restrictions
-            if value == "kling-v1":
+            if value == "kling-v3":
+                for t in duration_param.find_elements_by_type(Options):
+                    duration_param.remove_trait(t)
+                if not duration_param.find_elements_by_type(Slider):
+                    duration_param.add_trait(Slider(min_val=3, max_val=15))
+                self.show_parameter_by_name(["mode", "duration", "sound"])
+                current_duration = self.get_parameter_value("duration")
+                if current_duration is None or current_duration < 3 or current_duration > 15:
+                    self.set_parameter_value("duration", 5)
+            elif value == "kling-v1":
                 # kling-v1: only 5s duration, std or pro mode
                 self.show_parameter_by_name("mode")
                 self.hide_parameter_by_name(["duration", "sound"])
