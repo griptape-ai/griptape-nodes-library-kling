@@ -4,7 +4,7 @@
  * and per-shot description text.
  */
 
-const WIDGET_VERSION = "0.3.3";
+const WIDGET_VERSION = "0.4.0";
 
 export default function MultiShotEditor(container, props) {
   const { value, onChange, disabled } = props;
