@@ -4,6 +4,8 @@
  * and per-shot description text.
  */
 
+const WIDGET_VERSION = "0.1.0";
+
 export default function MultiShotEditor(container, props) {
   const { value, onChange, disabled } = props;
 
@@ -85,6 +87,7 @@ export default function MultiShotEditor(container, props) {
 
     wrapper.appendChild(buildStatusBar());
     wrapper.appendChild(buildAddButton());
+    wrapper.appendChild(buildVersionLabel());
     container.appendChild(wrapper);
   }
 
@@ -431,6 +434,20 @@ export default function MultiShotEditor(container, props) {
     }
 
     return btn;
+  }
+
+  // ── version label ──────────────────────────────────────────────────
+
+  function buildVersionLabel() {
+    return el("div", {
+      textContent: `v${WIDGET_VERSION}`,
+      style: `
+        font-size: 9px;
+        color: #444;
+        text-align: right;
+        margin-top: 4px;
+      `,
+    });
   }
 
   // ── drag-and-drop reordering ────────────────────────────────────────
