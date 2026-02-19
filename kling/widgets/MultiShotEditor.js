@@ -4,7 +4,7 @@
  * and per-shot description text.
  */
 
-const WIDGET_VERSION = "0.3.2";
+const WIDGET_VERSION = "0.3.3";
 
 export default function MultiShotEditor(container, props) {
   const { value, onChange, disabled } = props;
@@ -276,7 +276,6 @@ export default function MultiShotEditor(container, props) {
         len >= MAX_DESCRIPTION_LENGTH ? "#c44" : "#333";
       counter.textContent = `${len} / ${MAX_DESCRIPTION_LENGTH}`;
       counter.style.color = len >= MAX_DESCRIPTION_LENGTH ? "#c44" : "#555";
-      emitChange();
     });
     textarea.addEventListener("input", (e) => {
       shots[index].description = e.target.value;
@@ -285,6 +284,16 @@ export default function MultiShotEditor(container, props) {
         e.target.value.length >= MAX_DESCRIPTION_LENGTH ? "#c44" : "#555";
       textarea.style.borderColor =
         e.target.value.length >= MAX_DESCRIPTION_LENGTH ? "#c44" : "#555";
+
+      const selStart = textarea.selectionStart;
+      const selEnd = textarea.selectionEnd;
+      emitChange();
+      requestAnimationFrame(() => {
+        if (document.body.contains(textarea)) {
+          textarea.focus();
+          textarea.setSelectionRange(selStart, selEnd);
+        }
+      });
     });
     // Prevent node-level drag and keyboard shortcuts (e.g. Delete deleting the node)
     textarea.addEventListener("pointerdown", (e) => e.stopPropagation());
