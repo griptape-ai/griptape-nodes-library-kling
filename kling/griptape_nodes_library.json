@@ -33,6 +33,13 @@
             ]
         }
     },
+    "widgets": [
+        {
+            "name": "MultiShotEditor",
+            "path": "widgets/MultiShotEditor.js",
+            "description": "Multi-shot editor for managing video shot sequences"
+        }
+    ],
     "categories": [
         {
             "video/kling ai": {
@@ -87,6 +94,15 @@
                 "category": "video/kling ai",
                 "description": "Transfers motion from a reference video to a reference image using Kling Motion Control.",
                 "display_name": "Kling Motion Control"
+            }
+        },
+        {
+            "class_name": "KlingV3MultiShot",
+            "file_path": "kling_v3_multi_shot.py",
+            "metadata": {
+                "category": "video/kling ai",
+                "description": "Generates multi-shot videos using Kling v3 with per-shot prompts and durations.",
+                "display_name": "Kling v3 Multi-Shot"
             }
         }
     ]
