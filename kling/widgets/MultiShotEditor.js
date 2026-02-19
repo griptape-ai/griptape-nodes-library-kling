@@ -4,15 +4,29 @@
  * and per-shot description text.
  */
 
-const WIDGET_VERSION = "0.2.2";
+const WIDGET_VERSION = "0.3.0";
 
 export default function MultiShotEditor(container, props) {
   const { value, onChange, disabled } = props;
 
+  let nextShotId = 1;
+
+  function assignId(shot) {
+    if (!shot.id) {
+      shot.id = `shot-${nextShotId++}`;
+    } else {
+      const num = parseInt(shot.id.replace("shot-", ""), 10);
+      if (!isNaN(num) && num >= nextShotId) {
+        nextShotId = num + 1;
+      }
+    }
+    return shot;
+  }
+
   let shots =
     Array.isArray(value) && value.length > 0
-      ? value.map((s) => ({ ...s }))
-      : [{ name: "Shot1", duration: 2, description: "" }];
+      ? value.map((s) => assignId({ ...s }))
+      : [assignId({ name: "Shot1", duration: 2, description: "" })];
 
   let dragSourceIndex = null;
   let dragOverIndex = null;
@@ -400,11 +414,13 @@ export default function MultiShotEditor(container, props) {
       btn.addEventListener("pointerdown", (e) => {
         e.stopPropagation();
         const defaultDur = Math.min(2, remaining);
-        shots.push({
-          name: `Shot${shots.length + 1}`,
-          duration: defaultDur,
-          description: "",
-        });
+        shots.push(
+          assignId({
+            name: `Shot${shots.length + 1}`,
+            duration: defaultDur,
+            description: "",
+          }),
+        );
         emitChange();
         render();
       });
