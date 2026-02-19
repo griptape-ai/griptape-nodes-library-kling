@@ -10,6 +10,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Parame
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import logger, GriptapeNodes
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 
 SERVICE = "Kling"
@@ -557,12 +558,7 @@ class KlingAI_LipSync(ControlNode):
                         logger.info(f"Kling lip-sync succeeded: {video_url}")
 
                         # Download the generated video and save to static storage
-                        try:
-                            download_response = requests.get(video_url, timeout=60)
-                            download_response.raise_for_status()
-                            video_bytes = download_response.content
-                        except requests.exceptions.RequestException as e:
-                            raise RuntimeError(f"Failed to download generated lip-sync video: {e}") from e
+                        video_bytes = File(video_url).read_bytes()
 
                         filename = f"kling_lip_sync_{int(time.time())}.mp4"
                         static_files_manager = GriptapeNodes.StaticFilesManager()
