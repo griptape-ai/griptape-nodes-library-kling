@@ -10,6 +10,7 @@ from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
@@ -419,10 +420,8 @@ class KlingAI_MotionControl(SuccessFailureNode):
             self.parameter_output_values["kling_video_id"] = video_id
 
         try:
-            download_response = requests.get(download_url, timeout=60)
-            download_response.raise_for_status()
-            video_bytes = download_response.content
-        except requests.exceptions.RequestException as exc:
+            video_bytes = File(download_url).read_bytes()
+        except FileLoadError as exc:
             logger.warning("%s failed to download video: %s", self.name, exc)
             self.parameter_output_values["video_url"] = VideoUrlArtifact(download_url)
             self._set_status_results(

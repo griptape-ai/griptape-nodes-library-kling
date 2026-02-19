@@ -13,6 +13,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Parame
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import logger, GriptapeNodes
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
+from griptape_nodes.files.file import File, FileLoadError
 
 SERVICE = "Kling"
 API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
@@ -605,12 +606,7 @@ class KlingAI_ImageToVideo(ControlNode):
                 raise RuntimeError("Kling video generation task finished but no video URL was found or task timed out.")
 
             # Download the generated video and save to static storage
-            try:
-                download_response = requests.get(video_url, timeout=60)
-                download_response.raise_for_status()
-                video_bytes = download_response.content
-            except requests.exceptions.RequestException as e:
-                raise RuntimeError(f"Failed to download generated video: {e}") from e
+            video_bytes = File(video_url).read_bytes()
 
             timestamp = int(time.time() * 1000)
             filename = f"kling_image_to_video_{timestamp}_{job_index}.mp4"
