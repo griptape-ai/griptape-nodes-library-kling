@@ -4,7 +4,7 @@
  * and per-shot description text.
  */
 
-const WIDGET_VERSION = "0.5.0";
+const WIDGET_VERSION = "0.6.0";
 
 export default function MultiShotEditor(container, props) {
   const { value, onChange, disabled } = props;
@@ -26,7 +26,7 @@ export default function MultiShotEditor(container, props) {
   let shots =
     Array.isArray(value) && value.length > 0
       ? value.map((s) => assignId({ ...s }))
-      : [assignId({ name: "Shot1", duration: 2, description: "" })];
+      : [assignId({ name: "Shot1", duration: 3, description: "" })];
 
   let dragSourceIndex = null;
   let dragOverIndex = null;
@@ -35,6 +35,7 @@ export default function MultiShotEditor(container, props) {
   const MIN_SHOTS = 1;
   const MAX_DESCRIPTION_LENGTH = 512;
   const MAX_TOTAL_DURATION = 15;
+  const MIN_TOTAL_DURATION = 3;
   const MIN_DURATION = 1;
   const MAX_DURATION = 15;
   const PLACEHOLDER =
@@ -159,8 +160,9 @@ export default function MultiShotEditor(container, props) {
 
     // duration stepper (▲ value ▼)
     const budget = durationBudgetFor(index);
+    const wouldGoBelow = totalDuration() - 1 < MIN_TOTAL_DURATION;
     const canIncrease = !disabled && shot.duration < MAX_DURATION && shot.duration < budget;
-    const canDecrease = !disabled && shot.duration > MIN_DURATION;
+    const canDecrease = !disabled && shot.duration > MIN_DURATION && !wouldGoBelow;
 
     const stepper = el("div", {
       style: `
@@ -346,6 +348,8 @@ export default function MultiShotEditor(container, props) {
   function buildStatusBar() {
     const total = totalDuration();
     const overBudget = total > MAX_TOTAL_DURATION;
+    const underBudget = total < MIN_TOTAL_DURATION;
+    const durationColor = overBudget || underBudget ? "#c44" : "#666";
 
     const bar = el("div", {
       style: `
@@ -367,8 +371,8 @@ export default function MultiShotEditor(container, props) {
 
     bar.appendChild(
       el("span", {
-        textContent: `${total} / ${MAX_TOTAL_DURATION} s`,
-        style: `color: ${overBudget ? "#c44" : "#666"};`,
+        textContent: `${total}s (${MIN_TOTAL_DURATION}–${MAX_TOTAL_DURATION}s)`,
+        style: `color: ${durationColor};`,
       }),
     );
 

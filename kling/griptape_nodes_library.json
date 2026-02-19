@@ -101,7 +101,7 @@
             "file_path": "kling_v3_multi_shot.py",
             "metadata": {
                 "category": "video/kling ai",
-                "description": "Kling v3 multi-shot video node with custom shot editor",
+                "description": "Generates multi-shot videos using Kling v3 with per-shot prompts and durations.",
                 "display_name": "Kling v3 Multi-Shot"
             }
         }
