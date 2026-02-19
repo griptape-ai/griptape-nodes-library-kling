@@ -263,6 +263,7 @@ export default function MultiShotEditor(container, props) {
         e.target.value.length >= MAX_DESCRIPTION_LENGTH ? "#c44" : "#555";
       textarea.style.borderColor =
         e.target.value.length >= MAX_DESCRIPTION_LENGTH ? "#c44" : "#555";
+      emitChange();
     });
     // Prevent node-level drag and keyboard shortcuts (e.g. Delete deleting the node)
     textarea.addEventListener("pointerdown", (e) => e.stopPropagation());
