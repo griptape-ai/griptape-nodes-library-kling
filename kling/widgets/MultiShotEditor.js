@@ -4,7 +4,7 @@
  * and per-shot description text.
  */
 
-const WIDGET_VERSION = "0.2.0";
+const WIDGET_VERSION = "0.2.1";
 
 export default function MultiShotEditor(container, props) {
   const { value, onChange, disabled } = props;
@@ -186,9 +186,9 @@ export default function MultiShotEditor(container, props) {
       render();
     });
 
-    stepper.appendChild(decBtn);
-    stepper.appendChild(durationLabel);
     stepper.appendChild(incBtn);
+    stepper.appendChild(durationLabel);
+    stepper.appendChild(decBtn);
     header.appendChild(stepper);
 
     // spacer
