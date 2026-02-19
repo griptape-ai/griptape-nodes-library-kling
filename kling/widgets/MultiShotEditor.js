@@ -4,7 +4,7 @@
  * and per-shot description text.
  */
 
-const WIDGET_VERSION = "0.1.0";
+const WIDGET_VERSION = "0.2.0";
 
 export default function MultiShotEditor(container, props) {
   const { value, onChange, disabled } = props;
@@ -16,13 +16,13 @@ export default function MultiShotEditor(container, props) {
 
   let dragSourceIndex = null;
   let dragOverIndex = null;
-  let openDropdownIndex = null;
 
   const MAX_SHOTS = 6;
   const MIN_SHOTS = 1;
   const MAX_DESCRIPTION_LENGTH = 512;
   const MAX_TOTAL_DURATION = 15;
-  const DURATION_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  const MIN_DURATION = 1;
+  const MAX_DURATION = 10;
   const PLACEHOLDER =
     "Describe the shot information, such as: who is where and what is happening.";
 
@@ -50,16 +50,6 @@ export default function MultiShotEditor(container, props) {
     if (disabled || !onChange) return;
     onChange(shots.map((s) => ({ ...s })));
   }
-
-  // ── close any open dropdown when clicking outside ───────────────────
-
-  function onDocumentClick(e) {
-    if (openDropdownIndex !== null && !e.target.closest(".duration-badge")) {
-      openDropdownIndex = null;
-      render();
-    }
-  }
-  document.addEventListener("pointerdown", onDocumentClick, true);
 
   // ── render ──────────────────────────────────────────────────────────
 
@@ -153,38 +143,53 @@ export default function MultiShotEditor(container, props) {
       }),
     );
 
-    // duration badge + dropdown
-    const durationWrapper = el("div", {
-      style: "position: relative;",
-      className: "duration-badge",
+    // duration stepper (▲ value ▼)
+    const budget = durationBudgetFor(index);
+    const canIncrease = !disabled && shot.duration < MAX_DURATION && shot.duration < budget;
+    const canDecrease = !disabled && shot.duration > MIN_DURATION;
+
+    const stepper = el("div", {
+      style: `
+        display: flex;
+        align-items: center;
+        gap: 0;
+        background: #333;
+        border-radius: 4px;
+        overflow: hidden;
+      `,
     });
 
-    const durationBadge = el("span", {
+    const decBtn = buildStepperButton("▼", canDecrease, (e) => {
+      e.stopPropagation();
+      shots[index].duration = Math.max(MIN_DURATION, shots[index].duration - 1);
+      emitChange();
+      render();
+    });
+
+    const durationLabel = el("span", {
       textContent: `${shot.duration} s`,
       style: `
-        background: #333;
         color: #ddd;
         font-size: 12px;
-        padding: 3px 10px;
-        border-radius: 4px;
-        cursor: ${disabled ? "default" : "pointer"};
+        padding: 2px 8px;
+        min-width: 32px;
+        text-align: center;
         white-space: nowrap;
       `,
     });
-    if (!disabled) {
-      durationBadge.addEventListener("pointerdown", (e) => {
-        e.stopPropagation();
-        openDropdownIndex = openDropdownIndex === index ? null : index;
-        render();
-      });
-    }
-    durationWrapper.appendChild(durationBadge);
 
-    if (openDropdownIndex === index) {
-      durationWrapper.appendChild(buildDurationDropdown(index));
-    }
+    const incBtn = buildStepperButton("▲", canIncrease, (e) => {
+      e.stopPropagation();
+      const maxAllowed = Math.min(MAX_DURATION, budget);
+      shots[index].duration = Math.min(maxAllowed, shots[index].duration + 1);
+      emitChange();
+      render();
+    });
 
-    header.appendChild(durationWrapper);
+    stepper.appendChild(decBtn);
+    stepper.appendChild(durationLabel);
+    stepper.appendChild(incBtn);
+    header.appendChild(stepper);
 
     // spacer
     header.appendChild(el("div", { style: "flex: 1;" }));
@@ -289,66 +294,38 @@ export default function MultiShotEditor(container, props) {
     return item;
   }
 
-  // ── duration dropdown ───────────────────────────────────────────────
+  // ── duration stepper button ─────────────────────────────────────────
 
-  function buildDurationDropdown(index) {
-    const budget = durationBudgetFor(index);
-
-    const dropdown = el("div", {
+  function buildStepperButton(label, enabled, onClick) {
+    const btn = el("span", {
+      textContent: label,
       style: `
-        position: absolute;
-        top: 100%;
-        left: 0;
-        margin-top: 4px;
-        background: #2a2a2a;
-        border: 1px solid #444;
-        border-radius: 6px;
-        padding: 4px 0;
-        z-index: 100;
-        min-width: 60px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        font-size: 10px;
+        color: ${enabled ? "#ccc" : "#555"};
+        cursor: ${enabled ? "pointer" : "default"};
+        user-select: none;
+        opacity: ${enabled ? 1 : 0.4};
       `,
     });
 
-    DURATION_OPTIONS.forEach((dur) => {
-      const isSelected = shots[index].duration === dur;
-      const isAllowed = dur <= budget;
-
-      const option = el("div", {
-        textContent: `${dur} s`,
-        style: `
-          padding: 4px 12px;
-          font-size: 12px;
-          color: ${isSelected ? "#fff" : isAllowed ? "#aaa" : "#555"};
-          background: ${isSelected ? "#444" : "transparent"};
-          cursor: ${isAllowed ? "pointer" : "default"};
-          white-space: nowrap;
-          opacity: ${isAllowed ? 1 : 0.4};
-        `,
+    if (enabled) {
+      btn.addEventListener("pointerenter", () => {
+        btn.style.background = "#444";
       });
+      btn.addEventListener("pointerleave", () => {
+        btn.style.background = "transparent";
+      });
+      btn.addEventListener("pointerdown", onClick);
+    } else {
+      btn.addEventListener("pointerdown", (e) => e.stopPropagation());
+    }
 
-      if (isAllowed) {
-        option.addEventListener("pointerenter", () => {
-          if (!isSelected) option.style.background = "#333";
-        });
-        option.addEventListener("pointerleave", () => {
-          option.style.background = isSelected ? "#444" : "transparent";
-        });
-        option.addEventListener("pointerdown", (e) => {
-          e.stopPropagation();
-          shots[index].duration = dur;
-          openDropdownIndex = null;
-          emitChange();
-          render();
-        });
-      } else {
-        option.addEventListener("pointerdown", (e) => e.stopPropagation());
-      }
-
-      dropdown.appendChild(option);
-    });
-
-    return dropdown;
+    return btn;
   }
 
   // ── status bar ──────────────────────────────────────────────────────
@@ -602,7 +579,6 @@ export default function MultiShotEditor(container, props) {
   // ── cleanup ─────────────────────────────────────────────────────────
 
   return () => {
-    document.removeEventListener("pointerdown", onDocumentClick, true);
     document.removeEventListener("pointermove", onDragMove);
     document.removeEventListener("pointerup", onDragEnd);
     if (dragClone) {
