@@ -555,8 +555,8 @@ export default function MultiShotEditor(container, props) {
           element.innerHTML = val;
         } else if (key === "className") {
           element.className = val;
-        } else if (key === "disabled" && val) {
-          element.disabled = true;
+        } else if (key === "disabled") {
+          element.disabled = !!val;
         } else if (key === "placeholder") {
           element.placeholder = val;
         } else if (key === "value") {
