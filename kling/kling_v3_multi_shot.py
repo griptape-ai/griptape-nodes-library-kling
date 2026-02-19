@@ -19,7 +19,8 @@ from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 SERVICE = "Kling"
 API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
 SECRET_KEY_ENV_VAR = "KLING_SECRET_KEY"  # noqa: S105
-BASE_URL = "https://api.klingai.com/v1/videos/image2video"
+IMAGE2VIDEO_URL = "https://api.klingai.com/v1/videos/image2video"
+TEXT2VIDEO_URL = "https://api.klingai.com/v1/videos/text2video"
 
 
 def encode_jwt_token(ak: str, sk: str) -> str:
@@ -211,10 +212,6 @@ class KlingV3MultiShot(ControlNode):
         if not secret_key:
             errors.append(ValueError(f"Kling secret key not found. Set {SECRET_KEY_ENV_VAR}."))
 
-        image_api = self._get_image_api_data("start_frame")
-        if not image_api:
-            errors.append(ValueError("start_frame image is required."))
-
         shots = self.parameter_values.get("shots", self.DEFAULT_SHOTS)
         if not shots:
             errors.append(ValueError("At least one shot is required."))
@@ -249,35 +246,47 @@ class KlingV3MultiShot(ControlNode):
         jwt_token = encode_jwt_token(access_key, secret_key)
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {jwt_token}"}
 
-        # Build multi_prompt from shots
+        # Build multi_prompt from shots (1-based index per API spec)
         shots = self.parameter_values.get("shots", self.DEFAULT_SHOTS)
         multi_prompt = []
         for i, shot in enumerate(shots):
             description = shot.get("description", "").strip()
             duration = shot.get("duration", 2)
             multi_prompt.append({
-                "index": i,
+                "index": i + 1,
                 "prompt": description,
                 "duration": str(duration),
             })
 
         total_duration = sum(shot.get("duration", 1) for shot in shots)
 
+        # Determine endpoint based on whether images are provided
+        image_api = self._get_image_api_data("start_frame")
+        image_tail_api = self._get_image_api_data("end_frame")
+        has_images = image_api is not None
+
+        if has_images:
+            api_url = IMAGE2VIDEO_URL
+        else:
+            api_url = TEXT2VIDEO_URL
+
+        logger.info(f"Using {'image2video' if has_images else 'text2video'} endpoint")
+
         # Build payload
         payload: dict[str, Any] = {
             "model_name": "kling-v3",
+            "prompt": "",
             "multi_prompt": multi_prompt,
-            "duration": total_duration,
+            "multi_shot": True,
+            "shot_type": "customize",
+            "duration": str(total_duration),
             "cfg_scale": self.parameter_values.get("cfg_scale", 0.5),
             "mode": self.parameter_values.get("mode", "std"),
         }
 
-        # Image inputs
-        image_api = self._get_image_api_data("start_frame")
+        # Image inputs (only for image2video)
         if image_api:
             payload["image"] = image_api
-
-        image_tail_api = self._get_image_api_data("end_frame")
         if image_tail_api:
             payload["image_tail"] = image_tail_api
 
@@ -290,6 +299,10 @@ class KlingV3MultiShot(ControlNode):
         if sound_val:
             payload["sound"] = sound_val
 
+        aspect_ratio = self.parameter_values.get("aspect_ratio", "16:9")
+        if aspect_ratio:
+            payload["aspect_ratio"] = aspect_ratio
+
         # Log payload (redact base64 data)
         log_payload = payload.copy()
         for key in ["image", "image_tail"]:
@@ -298,7 +311,7 @@ class KlingV3MultiShot(ControlNode):
         logger.info(f"Kling V3 Multi-Shot API Request Payload: {json.dumps(log_payload, indent=2)}")
 
         # Submit generation request
-        response = requests.post(BASE_URL, headers=headers, json=payload, timeout=30)
+        response = requests.post(api_url, headers=headers, json=payload, timeout=30)
         logger.info(f"Initial response status: {response.status_code}")
         logger.info(f"Initial response text: {response.text[:500]}")
 
@@ -312,7 +325,7 @@ class KlingV3MultiShot(ControlNode):
         logger.info(f"Task created with ID: {task_id}")
 
         # Poll for completion
-        poll_url = f"{BASE_URL}/{task_id}"
+        poll_url = f"{api_url}/{task_id}"
         poll_delay = self.parameter_values.get("polling_delay", 10)
         max_retries = 120
         video_url = None
