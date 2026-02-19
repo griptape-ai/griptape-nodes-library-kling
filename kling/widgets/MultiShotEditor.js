@@ -4,7 +4,7 @@
  * and per-shot description text.
  */
 
-const WIDGET_VERSION = "0.3.1";
+const WIDGET_VERSION = "0.3.2";
 
 export default function MultiShotEditor(container, props) {
   const { value, onChange, disabled } = props;
@@ -285,7 +285,6 @@ export default function MultiShotEditor(container, props) {
         e.target.value.length >= MAX_DESCRIPTION_LENGTH ? "#c44" : "#555";
       textarea.style.borderColor =
         e.target.value.length >= MAX_DESCRIPTION_LENGTH ? "#c44" : "#555";
-      emitChange();
     });
     // Prevent node-level drag and keyboard shortcuts (e.g. Delete deleting the node)
     textarea.addEventListener("pointerdown", (e) => e.stopPropagation());
