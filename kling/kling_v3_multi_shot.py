@@ -252,14 +252,14 @@ class KlingV3MultiShot(ControlNode):
         # Build multi_prompt from shots
         shots = self.parameter_values.get("shots", self.DEFAULT_SHOTS)
         multi_prompt = []
-        for shot in shots:
+        for i, shot in enumerate(shots):
             description = shot.get("description", "").strip()
             duration = shot.get("duration", 2)
-            # Append duration to each prompt so the API can allocate time per shot
-            if description:
-                multi_prompt.append(f"{description}, {duration} seconds")
-            else:
-                multi_prompt.append(f"{duration} seconds")
+            multi_prompt.append({
+                "index": i,
+                "prompt": description,
+                "duration": str(duration),
+            })
 
         total_duration = sum(shot.get("duration", 1) for shot in shots)
 
