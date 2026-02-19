@@ -4,7 +4,7 @@
  * and per-shot description text.
  */
 
-const WIDGET_VERSION = "0.6.0";
+const WIDGET_VERSION = "0.6.1";
 
 export default function MultiShotEditor(container, props) {
   const { value, onChange, disabled } = props;
@@ -233,6 +233,11 @@ export default function MultiShotEditor(container, props) {
         if (shots.length <= 1) return;
         shots.splice(index, 1);
         renumberShots();
+        const total = totalDuration();
+        if (total < MIN_TOTAL_DURATION) {
+          const lastShot = shots[shots.length - 1];
+          lastShot.duration += MIN_TOTAL_DURATION - total;
+        }
         emitChange();
         render();
       });
