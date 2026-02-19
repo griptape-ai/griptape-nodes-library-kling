@@ -4,7 +4,7 @@
  * and per-shot description text.
  */
 
-const WIDGET_VERSION = "0.2.1";
+const WIDGET_VERSION = "0.2.2";
 
 export default function MultiShotEditor(container, props) {
   const { value, onChange, disabled } = props;
@@ -22,7 +22,7 @@ export default function MultiShotEditor(container, props) {
   const MAX_DESCRIPTION_LENGTH = 512;
   const MAX_TOTAL_DURATION = 15;
   const MIN_DURATION = 1;
-  const MAX_DURATION = 10;
+  const MAX_DURATION = 15;
   const PLACEHOLDER =
     "Describe the shot information, such as: who is where and what is happening.";
 
