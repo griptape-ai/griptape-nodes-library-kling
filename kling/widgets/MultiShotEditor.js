@@ -4,7 +4,7 @@
  * and per-shot description text.
  */
 
-const WIDGET_VERSION = "0.3.0";
+const WIDGET_VERSION = "0.3.1";
 
 export default function MultiShotEditor(container, props) {
   const { value, onChange, disabled } = props;
@@ -514,12 +514,17 @@ export default function MultiShotEditor(container, props) {
 
     if (newOverIndex !== dragOverIndex) {
       dragOverIndex = newOverIndex;
-      // Update visual indicators on existing items
+      const lastIndex = shots.length - 1;
       shotItems.forEach((item) => {
-        if (item.index === dragOverIndex && item.index !== dragSourceIndex) {
+        item.el.style.borderTop = "none";
+        item.el.style.borderBottom = "1px solid #2a2a2a";
+
+        if (item.index === dragSourceIndex) return;
+
+        if (dragOverIndex === shots.length && item.index === lastIndex) {
+          item.el.style.borderBottom = "2px solid #4a9eff";
+        } else if (item.index === dragOverIndex) {
           item.el.style.borderTop = "2px solid #4a9eff";
-        } else {
-          item.el.style.borderTop = "none";
         }
       });
     }
