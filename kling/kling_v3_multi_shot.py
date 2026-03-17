@@ -13,8 +13,8 @@ from griptape_nodes.traits.widget import Widget
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterGroup
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.retained_mode.griptape_nodes import logger, GriptapeNodes
-from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 
 SERVICE = "Kling"
 API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
@@ -51,6 +51,8 @@ class KlingV3MultiShot(ControlNode):
         if metadata:
             node_metadata.update(metadata)
         super().__init__(name=name, metadata=node_metadata, **kwargs)
+        self._output_file = ProjectFileParameter(node=self, name="output_file", default_filename="kling_video.mp4")
+        self._output_file.add_parameter()
 
         # Image Inputs
         with ParameterGroup(name="Image Inputs") as image_group:
@@ -360,7 +362,7 @@ class KlingV3MultiShot(ControlNode):
         if not video_url:
             raise RuntimeError("Video generation timed out — no video URL received.")
 
-        # Download and save to static storage
+        # Download and save to project storage
         try:
             download_response = requests.get(video_url, timeout=60)
             download_response.raise_for_status()
@@ -368,13 +370,11 @@ class KlingV3MultiShot(ControlNode):
         except requests.exceptions.RequestException as e:
             raise RuntimeError(f"Failed to download generated video: {e}") from e
 
-        timestamp = int(time.time() * 1000)
-        filename = f"kling_v3_multi_shot_{timestamp}.mp4"
-        static_files_manager = GriptapeNodes.StaticFilesManager()
-        saved_url = static_files_manager.save_static_file(video_bytes, filename, ExistingFilePolicy.CREATE_NEW)
+        saved = self._output_file.build_file()
+        saved.write_bytes(video_bytes)
 
-        video_artifact = VideoUrlArtifact(saved_url)
-        logger.info(f"Saved multi-shot video as {filename}. URL: {saved_url}")
+        video_artifact = VideoUrlArtifact(saved.location)
+        logger.info(f"Saved multi-shot video to project storage. URL: {saved.location}")
 
         self.publish_update_to_parameter("video_url", video_artifact)
 

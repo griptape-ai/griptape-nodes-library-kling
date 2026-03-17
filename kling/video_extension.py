@@ -7,8 +7,8 @@ from griptape_nodes.traits.options import Options
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterGroup
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.retained_mode.griptape_nodes import logger, GriptapeNodes
-from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.files.file import File, FileLoadError
 
 SERVICE = "Kling"
@@ -39,6 +39,8 @@ def encode_jwt_token(ak: str, sk: str) -> str:
 class KlingAI_VideoExtension(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
+        self._output_file = ProjectFileParameter(node=self, name="output_file", default_filename="kling_video.mp4")
+        self._output_file.add_parameter()
         self.category = "AI/Kling"
         self.description = "Extends existing videos by 4-5 seconds using Kling AI (V1.5 only). Max total: 3 minutes."
 
@@ -215,15 +217,14 @@ class KlingAI_VideoExtension(ControlNode):
                         actual_video_id = result["data"]["task_result"]["videos"][0]["id"]
                         logger.info(f"Kling video extension succeeded: {video_url}")
                         
-                        # Download the generated video and save to static storage
+                        # Download the generated video and save to project storage
                         video_bytes = File(video_url).read_bytes()
 
-                        filename = f"kling_video_extension_{int(time.time())}.mp4"
-                        static_files_manager = GriptapeNodes.StaticFilesManager()
-                        saved_url = static_files_manager.save_static_file(video_bytes, filename, ExistingFilePolicy.CREATE_NEW)
+                        saved = self._output_file.build_file()
+                        saved.write_bytes(video_bytes)
 
                         # Create artifact and publish outputs
-                        video_artifact = VideoUrlArtifact(url=saved_url, name=filename)
+                        video_artifact = VideoUrlArtifact(url=saved.location, name=saved.location)
                         self.publish_update_to_parameter("extended_video_url", video_artifact)
                         if actual_video_id:
                             # Publish to correct parameter name declared for this node
