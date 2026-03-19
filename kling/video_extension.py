@@ -1,15 +1,14 @@
+import json
 import time
+
 import jwt
 import requests
-import json
-from griptape.artifacts import TextArtifact, UrlArtifact
-from griptape_nodes.traits.options import Options
-
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterGroup
+from griptape.artifacts import UrlArtifact
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
-from griptape_nodes.retained_mode.griptape_nodes import logger, GriptapeNodes
-from griptape_nodes.files.file import File, FileLoadError
+from griptape_nodes.files.file import File
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 
 SERVICE = "Kling"
 API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
@@ -21,6 +20,7 @@ class VideoUrlArtifact(UrlArtifact):
     """
     Artifact that contains a URL to a video.
     """
+
     def __init__(self, url: str, name: str | None = None):
         super().__init__(value=url, name=name or self.__class__.__name__)
 
@@ -113,7 +113,7 @@ class KlingAI_VideoExtension(ControlNode):
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Output URL of the extended video.",
-                ui_options={"placeholder_text": "", "is_full_width": True}
+                ui_options={"placeholder_text": "", "is_full_width": True},
             )
         )
         self.add_parameter(
@@ -124,7 +124,7 @@ class KlingAI_VideoExtension(ControlNode):
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="The Task ID of the video extension from Kling AI.",
-                ui_options={"placeholder_text": ""}
+                ui_options={"placeholder_text": ""},
             )
         )
 
@@ -157,7 +157,7 @@ class KlingAI_VideoExtension(ControlNode):
         if validation_errors:
             error_message = "; ".join(str(e) for e in validation_errors)
             raise ValueError(f"Validation failed: {error_message}")
-            
+
         def extend_video() -> VideoUrlArtifact:
             access_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
             secret_key = GriptapeNodes.SecretsManager().get_secret(SECRET_KEY_ENV_VAR)
@@ -185,7 +185,7 @@ class KlingAI_VideoExtension(ControlNode):
                 payload["callback_url"] = callback_url.strip()
 
             logger.info(f"Kling Video Extension API Request Payload: {json.dumps(payload, indent=2)}")
-            
+
             # Make request
             response = requests.post(BASE_URL, headers=headers, json=payload, timeout=30)
             if response.status_code != 200:
@@ -194,29 +194,31 @@ class KlingAI_VideoExtension(ControlNode):
                 except Exception:
                     logger.error(f"Kling Video Extension error text: {response.text}")
             response.raise_for_status()
-            
+
             task_id = response.json()["data"]["task_id"]
             poll_url = f"{BASE_URL}/{task_id}"
-            
+
             # Polling for completion
             max_retries = 120  # Video extension may take longer - up to 10 minutes
             retry_delay = 5
-            
+
             for attempt in range(max_retries):
                 try:
                     time.sleep(retry_delay)
                     result_response = requests.get(poll_url, headers=headers, timeout=30)
                     result_response.raise_for_status()
                     result = result_response.json()
-                    
+
                     status = result["data"]["task_status"]
-                    logger.info(f"Kling video extension status (Task ID: {task_id}): {status} (Attempt {attempt + 1}/{max_retries})")
+                    logger.info(
+                        f"Kling video extension status (Task ID: {task_id}): {status} (Attempt {attempt + 1}/{max_retries})"
+                    )
 
                     if status == "succeed":
                         video_url = result["data"]["task_result"]["videos"][0]["url"]
                         actual_video_id = result["data"]["task_result"]["videos"][0]["id"]
                         logger.info(f"Kling video extension succeeded: {video_url}")
-                        
+
                         # Download the generated video and save to project storage
                         video_bytes = File(video_url).read_bytes()
 
@@ -229,9 +231,9 @@ class KlingAI_VideoExtension(ControlNode):
                         if actual_video_id:
                             # Publish to correct parameter name declared for this node
                             self.publish_update_to_parameter("task_id", actual_video_id)
-                        
+
                         return video_artifact
-                        
+
                     if status == "failed":
                         error_msg = result["data"].get("task_status_msg", "Unknown error")
                         logger.error(f"Kling video extension failed: {error_msg}")
@@ -244,4 +246,4 @@ class KlingAI_VideoExtension(ControlNode):
 
             raise RuntimeError("Kling video extension task timed out.")
 
-        yield extend_video 
+        yield extend_video

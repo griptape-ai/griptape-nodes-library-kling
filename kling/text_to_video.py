@@ -4,16 +4,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import jwt
 import requests
-
 from griptape.artifacts import VideoUrlArtifact
-from griptape_nodes.traits.options import Options
-from griptape_nodes.traits.slider import Slider
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterGroup
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
-from griptape_nodes.retained_mode.griptape_nodes import logger, GriptapeNodes
-from griptape_nodes.files.file import File, FileLoadError
-
+from griptape_nodes.files.file import File
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.traits.options import Options
+from griptape_nodes.traits.slider import Slider
 
 SERVICE = "Kling"
 API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
@@ -60,7 +58,18 @@ class KlingAI_TextToVideo(ControlNode):
                 default_value="kling-v3",
                 tooltip="Model Name",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["kling-v3", "kling-v2-6", "kling-v2-5-turbo", "kling-v2-1-master", "kling-v2-master", "kling-v1-6"])}
+                traits={
+                    Options(
+                        choices=[
+                            "kling-v3",
+                            "kling-v2-6",
+                            "kling-v2-5-turbo",
+                            "kling-v2-1-master",
+                            "kling-v2-master",
+                            "kling-v1-6",
+                        ]
+                    )
+                },
             )
         )
         self.add_parameter(
@@ -95,7 +104,7 @@ class KlingAI_TextToVideo(ControlNode):
                 default_value="std",
                 tooltip="Video generation mode (std: Standard, pro: Professional)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["std", "pro"])}
+                traits={Options(choices=["std", "pro"])},
             )
         )
         self.add_parameter(
@@ -107,7 +116,7 @@ class KlingAI_TextToVideo(ControlNode):
                 default_value="16:9",
                 tooltip="Aspect ratio of the generated video frame (width:height)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["16:9", "9:16", "1:1"])}
+                traits={Options(choices=["16:9", "9:16", "1:1"])},
             )
         )
         self.add_parameter(
@@ -157,7 +166,7 @@ class KlingAI_TextToVideo(ControlNode):
                 default_value="off",
                 tooltip="Generate native audio with the video (kling-v2-6 only)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["on", "off"])}
+                traits={Options(choices=["on", "off"])},
             )
         )
         self.add_parameter(
@@ -203,7 +212,7 @@ class KlingAI_TextToVideo(ControlNode):
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Video URL (index 0).",
-                ui_options={"placeholder_text": "", "is_full_width": True}
+                ui_options={"placeholder_text": "", "is_full_width": True},
             )
         )
         self.add_parameter(
@@ -214,7 +223,7 @@ class KlingAI_TextToVideo(ControlNode):
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Video URL (index 1).",
-                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True}
+                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True},
             )
         )
         self.add_parameter(
@@ -225,7 +234,7 @@ class KlingAI_TextToVideo(ControlNode):
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Video URL (index 2).",
-                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True}
+                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True},
             )
         )
         self.add_parameter(
@@ -236,7 +245,7 @@ class KlingAI_TextToVideo(ControlNode):
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Video URL (index 3).",
-                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True}
+                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True},
             )
         )
         self.add_parameter(
@@ -247,7 +256,7 @@ class KlingAI_TextToVideo(ControlNode):
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Video URL (index 4).",
-                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True}
+                ui_options={"placeholder_text": "", "is_full_width": True, "hide": True},
             )
         )
         self.add_parameter(
@@ -296,7 +305,7 @@ class KlingAI_TextToVideo(ControlNode):
                 errors.append(ValueError("kling-v2-5-turbo only supports durations 5 or 10 seconds"))
             if aspect_ratio != "16:9":
                 errors.append(ValueError("kling-v2-5-turbo only supports 1080p (16:9) aspect ratio"))
-        
+
         # kling-v2-6 constraints: pro-only, 5s/10s only
         if model == "kling-v2-6":
             mode = self.get_parameter_value("mode")
@@ -314,7 +323,9 @@ class KlingAI_TextToVideo(ControlNode):
 
         return errors if errors else None
 
-    def after_value_set(self, parameter: Parameter, value: any, modified_parameters_set: set[str] | None = None) -> None:
+    def after_value_set(
+        self, parameter: Parameter, value: any, modified_parameters_set: set[str] | None = None
+    ) -> None:
         """Update parameter visibility based on model selection."""
         if parameter.name == "model_name":
             if value == "kling-v3":
@@ -366,7 +377,7 @@ class KlingAI_TextToVideo(ControlNode):
 
     def process(self) -> AsyncResult[None]:
         yield lambda: self._process()
-    
+
     def _process(self):
         prompt = self.get_parameter_value("prompt")
 
@@ -401,7 +412,7 @@ class KlingAI_TextToVideo(ControlNode):
             negative_prompt_val = self.get_parameter_value("negative_prompt")
             if negative_prompt_val:
                 payload["negative_prompt"] = negative_prompt_val
-            
+
             callback_url_val = self.get_parameter_value("callback_url")
             if callback_url_val:
                 payload["callback_url"] = callback_url_val
@@ -412,13 +423,13 @@ class KlingAI_TextToVideo(ControlNode):
 
             # Remove empty values to comply with Kling API spec
             payload = {k: v for k, v in payload.items() if v not in (None, "", {}, [])}
-            
+
             logger.info(f"Kling Text-to-Video API Request Payload: {json.dumps(payload, indent=2)}")
             response = requests.post(BASE_URL, headers=headers, json=payload, timeout=30)  # noqa: S113 Collin is this ok to ignore?
             logger.info(f"Initial response status: {response.status_code}")
             logger.info(f"Initial response headers: {dict(response.headers)}")
             logger.info(f"Initial response text: {response.text[:500]}...")  # First 500 chars
-            
+
             try:
                 response.raise_for_status()
                 response_data = response.json()
@@ -431,53 +442,61 @@ class KlingAI_TextToVideo(ControlNode):
 
             poll_url = f"{BASE_URL}/{task_id}"
             video_url = None
-            actual_video_id = None # Initialize variable to store the actual video ID
+            actual_video_id = None  # Initialize variable to store the actual video ID
 
             poll_delay = self.get_parameter_value("polling_delay")
             max_retries = 120
             retry_count = 0
-            
+
             while retry_count < max_retries:
                 time.sleep(poll_delay)
                 retry_count += 1
-                
+
                 try:
                     result_response = requests.get(poll_url, headers=headers, timeout=30)  # noqa: S113
-                    logger.info(f"Polling response status: {result_response.status_code} (attempt {retry_count}/{max_retries})")
-                    
+                    logger.info(
+                        f"Polling response status: {result_response.status_code} (attempt {retry_count}/{max_retries})"
+                    )
+
                     if result_response.status_code != 200:
                         logger.warning(f"Non-200 status code: {result_response.status_code}")
                         logger.warning(f"Response text: {result_response.text[:500]}...")
                         continue  # Retry on non-200 status
-                    
+
                     logger.info(f"Polling response headers: {dict(result_response.headers)}")
                     logger.info(f"Polling response text: {result_response.text[:500]}...")  # First 500 chars
-                    
+
                     try:
                         result = result_response.json()
                     except requests.exceptions.JSONDecodeError as e:
-                        logger.error(f"Failed to parse JSON from polling response. Status: {result_response.status_code}")
+                        logger.error(
+                            f"Failed to parse JSON from polling response. Status: {result_response.status_code}"
+                        )
                         logger.error(f"Response text: {result_response.text}")
                         logger.error(f"Response headers: {dict(result_response.headers)}")
                         if retry_count < max_retries:
                             logger.info(f"Retrying in 5 seconds... (attempt {retry_count}/{max_retries})")
                             continue
                         else:
-                            raise RuntimeError(f"Invalid JSON response from Kling API after {max_retries} attempts: {e}") from e
-                    
+                            raise RuntimeError(
+                                f"Invalid JSON response from Kling API after {max_retries} attempts: {e}"
+                            ) from e
+
                     status = result["data"]["task_status"]
                     logger.info(f"Video generation status: {status}")
                     if status == "succeed":
                         logger.info(f"Video generation succeeded: {result['data']['task_result']['videos'][0]['url']}")
                         video_url = result["data"]["task_result"]["videos"][0]["url"]
-                        actual_video_id = result["data"]["task_result"]["videos"][0]["id"] # Extract the correct video ID
+                        actual_video_id = result["data"]["task_result"]["videos"][0][
+                            "id"
+                        ]  # Extract the correct video ID
                         break
                     if status == "failed":
                         error_msg = f"Video generation failed: {result['data']['task_status_msg']}"
                         logger.error(error_msg)
                         raise RuntimeError(error_msg)
                     # Continue polling for "submitted", "processing", etc.
-                    
+
                 except requests.exceptions.RequestException as e:
                     logger.warning(f"Request failed (attempt {retry_count}/{max_retries}): {e}")
                     if retry_count >= max_retries:
@@ -486,7 +505,9 @@ class KlingAI_TextToVideo(ControlNode):
                     continue
 
             if not video_url:
-                raise RuntimeError(f"Video generation timed out after {max_retries * 5 / 60:.1f} minutes. Task may still be processing.")
+                raise RuntimeError(
+                    f"Video generation timed out after {max_retries * 5 / 60:.1f} minutes. Task may still be processing."
+                )
 
             # Download the generated video and save to project storage
             video_bytes = File(video_url).read_bytes()
@@ -530,7 +551,7 @@ class KlingAI_TextToVideo(ControlNode):
                     video_artifacts.append(result_artifact)
                     if first_video_artifact is None:
                         first_video_artifact = result_artifact
-            
+
         if first_video_artifact is None:
             raise RuntimeError("No videos were generated.")
 

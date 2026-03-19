@@ -6,15 +6,14 @@ from typing import Any
 import jwt
 import requests
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact, VideoUrlArtifact
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes.traits.widget import Widget
-
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterGroup
-from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
-from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
-from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
-from griptape_nodes.retained_mode.griptape_nodes import logger, GriptapeNodes
 
 SERVICE = "Kling"
 API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
@@ -254,11 +253,13 @@ class KlingV3MultiShot(ControlNode):
         for i, shot in enumerate(shots):
             description = shot.get("description", "").strip()
             duration = shot.get("duration", 2)
-            multi_prompt.append({
-                "index": i + 1,
-                "prompt": description,
-                "duration": str(duration),
-            })
+            multi_prompt.append(
+                {
+                    "index": i + 1,
+                    "prompt": description,
+                    "duration": str(duration),
+                }
+            )
 
         total_duration = sum(shot.get("duration", 1) for shot in shots)
 

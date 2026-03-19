@@ -1,17 +1,16 @@
+import json
 import time
+
 import jwt
 import requests
-import json
-import base64
-from griptape.artifacts import TextArtifact, UrlArtifact, ImageArtifact, ImageUrlArtifact, BlobArtifact
-from griptape_nodes.traits.options import Options
-
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterGroup
+from griptape.artifacts import UrlArtifact
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
-from griptape_nodes.retained_mode.griptape_nodes import logger, GriptapeNodes
-from griptape_nodes.files.file import File, FileLoadError
+from griptape_nodes.files.file import File
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
+from griptape_nodes.traits.options import Options
 
 SERVICE = "Kling"
 API_KEY_ENV_VAR = "KLING_ACCESS_KEY"

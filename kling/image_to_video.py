@@ -6,14 +6,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import jwt
 import requests
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact, VideoUrlArtifact
-from griptape_nodes.traits.options import Options
-from griptape_nodes.traits.slider import Slider
-
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterGroup
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
-from griptape_nodes.retained_mode.griptape_nodes import logger, GriptapeNodes
 from griptape_nodes.files.file import File, FileLoadError
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.traits.options import Options
+from griptape_nodes.traits.slider import Slider
 
 SERVICE = "Kling"
 API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
@@ -174,7 +173,7 @@ class KlingAI_ImageToVideo(ControlNode):
                 tooltip="Generate native audio with the video (kling-v2-6 only)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["on", "off"])},
-                hide=True  # Hidden by default; shown only for kling-v2-6
+                hide=True,  # Hidden by default; shown only for kling-v2-6
             )
             Parameter(
                 name="polling_delay",
@@ -428,10 +427,10 @@ class KlingAI_ImageToVideo(ControlNode):
             errors.append(ValueError("At least one of 'image' or 'image_tail' must be provided."))
         if image_tail_val:
             end_frame_supported = (
-                (model == "kling-v2-1" and mode == "pro" and duration in [5, 10]) or
-                (model == "kling-v2-5-turbo" and mode == "pro" and duration in [5, 10]) or
-                (model == "kling-v2-6" and mode == "pro" and duration in [5, 10]) or
-                (model == "kling-v3")
+                (model == "kling-v2-1" and mode == "pro" and duration in [5, 10])
+                or (model == "kling-v2-5-turbo" and mode == "pro" and duration in [5, 10])
+                or (model == "kling-v2-6" and mode == "pro" and duration in [5, 10])
+                or (model == "kling-v3")
             )
             if not end_frame_supported:
                 errors.append(
@@ -716,7 +715,9 @@ class KlingAI_ImageToVideo(ControlNode):
 
             # Add all potentially modified parameters to the set if provided
             if modified_parameters_set is not None:
-                modified_parameters_set.update(["static_mask", "dynamic_masks", "mode", "klingv3_duration", "duration", "sound"])
+                modified_parameters_set.update(
+                    ["static_mask", "dynamic_masks", "mode", "klingv3_duration", "duration", "sound"]
+                )
         if parameter.name == "num_videos":
             num_videos = self.get_parameter_value("num_videos")
             if num_videos is None:
