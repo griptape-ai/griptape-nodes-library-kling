@@ -27,10 +27,7 @@
             "Lip Sync"
         ],
         "dependencies": {
-            "pip_dependencies": [
-                "pyjwt",
-                "requests"
-            ]
+            "pip_dependencies": []
         }
     },
     "widgets": [
