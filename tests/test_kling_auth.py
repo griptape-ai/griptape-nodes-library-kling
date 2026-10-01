@@ -95,7 +95,9 @@ def test_an_empty_api_key_falls_through_to_the_pair(secrets: Callable[..., None]
     """Registering a secret writes an empty default for it, which must not count as configured."""
     secrets({API_KEY_ENV_VAR: empty_value, ACCESS_KEY_ENV_VAR: ACCESS_KEY, SECRET_KEY_ENV_VAR: SECRET_KEY})
 
-    assert get_auth_token() != ""
+    token = get_auth_token()
+    claims = jwt.decode(token, SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False, "verify_nbf": False})
+    assert claims["iss"] == ACCESS_KEY
 
 
 def test_headers_carry_the_token_as_a_bearer(secrets: Callable[..., None]) -> None:
