@@ -201,6 +201,27 @@ def test_choosing_a_live_model_is_not_reported(endpoint: _Endpoint, caplog: pyte
     assert caplog.text == ""
 
 
+@pytest.mark.parametrize("endpoint", ENDPOINTS)
+def test_every_live_model_drives_the_duration_controls(endpoint: _Endpoint) -> None:
+    """Each live model needs its own branch in ``after_value_set`` to lay out the panel.
+
+    The two duration controls are mutually exclusive, so a model the chain does not handle
+    leaves whichever pair the previous selection chose. Nothing ties the dropdown's contents
+    to the branches, which is what this checks: adding a model to the live list without
+    giving it a branch fails here rather than shipping a stale panel.
+    """
+    node = endpoint.node_class(name="node")
+
+    for live_model in endpoint.live_models:
+        node.set_parameter_value(MODEL_PARAMETER, live_model)
+
+        hidden = {
+            name: node.get_parameter_by_name(name).ui_options.get("hide", False)
+            for name in ("duration", "klingv3_duration")
+        }
+        assert sum(hidden.values()) == 1, f"{live_model} left the duration controls as {hidden}"
+
+
 def test_lip_sync_offers_its_own_models() -> None:
     """Lip-sync still serves the models the video endpoints retired, so it shares no list."""
     node = KlingAI_LipSync(name="node")

@@ -649,11 +649,6 @@ class KlingAI_ImageToVideo(ControlNode):
                 current_duration = self.get_parameter_value("duration")
                 if current_duration not in [5, 10]:
                     self.set_parameter_value("duration", 5)
-            else:
-                # Reached only by a value that arrives before the retired-model migration
-                # resolves it, so offer the unrestricted controls rather than guessing.
-                self.show_parameter_by_name(["mode", "duration"])
-                self.hide_parameter_by_name(["klingv3_duration", "sound"])
 
             # Add all potentially modified parameters to the set if provided
             if modified_parameters_set is not None:

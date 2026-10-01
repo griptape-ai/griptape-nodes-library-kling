@@ -334,11 +334,6 @@ class KlingAI_TextToVideo(ControlNode):
                     self.set_parameter_value("duration", 5)
                 if modified_parameters_set is not None:
                     modified_parameters_set.update(["mode", "klingv3_duration", "duration", "sound"])
-            else:
-                self.show_parameter_by_name(["mode", "aspect_ratio", "duration"])
-                self.hide_parameter_by_name(["klingv3_duration", "sound"])  # Other models don't support sound
-                if modified_parameters_set is not None:
-                    modified_parameters_set.update(["mode", "aspect_ratio", "klingv3_duration", "duration", "sound"])
         if parameter.name == "num_videos":
             num_videos = self.get_parameter_value("num_videos")
             if num_videos is None:
