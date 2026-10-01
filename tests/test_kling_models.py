@@ -201,24 +201,32 @@ def test_choosing_a_live_model_is_not_reported(endpoint: _Endpoint, caplog: pyte
     assert caplog.text == ""
 
 
+DURATION_PARAMETERS = ("duration", "klingv3_duration")
+
+
+def _hidden_duration_controls(node: BaseNode) -> dict[str, bool]:
+    """Which of the mutually exclusive duration controls the panel is currently hiding."""
+    return {name: bool(node.get_parameter_by_name(name).ui_options.get("hide", False)) for name in DURATION_PARAMETERS}
+
+
 @pytest.mark.parametrize("endpoint", ENDPOINTS)
 def test_every_live_model_drives_the_duration_controls(endpoint: _Endpoint) -> None:
     """Each live model needs its own branch in ``after_value_set`` to lay out the panel.
 
-    The two duration controls are mutually exclusive, so a model the chain does not handle
-    leaves whichever pair the previous selection chose. Nothing ties the dropdown's contents
-    to the branches, which is what this checks: adding a model to the live list without
-    giving it a branch fails here rather than shipping a stale panel.
+    Nothing ties the dropdown's contents to those branches, so adding a model to the live
+    list without giving it one would ship a panel left over from the previous selection.
+    Both controls are hidden first, and the node starts from scratch for each model, so the
+    only thing that can leave exactly one of them visible is a branch that ran for this
+    model: asserting against inherited state would hold whether a branch ran or not.
     """
-    node = endpoint.node_class(name="node")
-
     for live_model in endpoint.live_models:
+        node = endpoint.node_class(name="node")
+        node.hide_parameter_by_name(list(DURATION_PARAMETERS))
+        assert sum(_hidden_duration_controls(node).values()) == len(DURATION_PARAMETERS)
+
         node.set_parameter_value(MODEL_PARAMETER, live_model)
 
-        hidden = {
-            name: node.get_parameter_by_name(name).ui_options.get("hide", False)
-            for name in ("duration", "klingv3_duration")
-        }
+        hidden = _hidden_duration_controls(node)
         assert sum(hidden.values()) == 1, f"{live_model} left the duration controls as {hidden}"
 
 
