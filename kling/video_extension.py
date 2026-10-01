@@ -8,6 +8,7 @@ from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.files.file import File
 from griptape_nodes.retained_mode.griptape_nodes import logger
+from kling_api import raise_for_kling_error
 from kling_auth import get_auth_headers, validate_credentials
 
 BASE_URL = "https://api-singapore.klingai.com/v1/videos/video-extend"
@@ -169,7 +170,7 @@ class KlingAI_VideoExtension(ControlNode):
                     logger.error(f"Kling Video Extension error body: {json.dumps(response.json(), indent=2)}")
                 except Exception:
                     logger.error(f"Kling Video Extension error text: {response.text}")
-            response.raise_for_status()
+            raise_for_kling_error(response, action="submit a video-extension generation to Kling")
 
             task_id = response.json()["data"]["task_id"]
             poll_url = f"{BASE_URL}/{task_id}"

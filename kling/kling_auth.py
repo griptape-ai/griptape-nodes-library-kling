@@ -61,6 +61,31 @@ def validate_credentials() -> list[Exception]:
     return []
 
 
+def credential_precedence_note() -> str | None:
+    """Explain which mechanism supplied the token, when both are configured.
+
+    ``get_secret`` reads OS environment variables ahead of either ``.env`` file, so a
+    ``KLING_API_KEY`` left behind by another tool quietly supplies the token while a working
+    Access Key / Secret Key pair sits unused. Kling rejects a bad credential from either
+    mechanism with the same code, and authenticating the wrong account looks like an
+    unrelated billing problem, so neither symptom points at the shadowing on its own.
+
+    Returns:
+        The explanation, or None when only one mechanism is configured and there is
+        nothing to disambiguate.
+    """
+    if not _get_secret(API_KEY_ENV_VAR):
+        return None
+    if not (_get_secret(ACCESS_KEY_ENV_VAR) and _get_secret(SECRET_KEY_ENV_VAR)):
+        return None
+    return (
+        f"The token came from {API_KEY_ENV_VAR}, which takes precedence: {ACCESS_KEY_ENV_VAR} and "
+        f"{SECRET_KEY_ENV_VAR} are also set but were not used. To authenticate with the pair "
+        f"instead, clear {API_KEY_ENV_VAR}, including any value exported into the environment the "
+        "engine started from."
+    )
+
+
 def _get_secret(secret_name: str) -> str | None:
     # Each mechanism is optional, so a missing secret is an expected outcome here rather
     # than an error worth logging.

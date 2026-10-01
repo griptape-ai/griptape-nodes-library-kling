@@ -34,6 +34,29 @@ If you leave `KLING_API_KEY` empty, the nodes fall back to signing a request tok
 both halves of the pair are required: setting only one leaves Kling unauthenticated, and the nodes
 report which half is missing.
 
+### If a generation fails on credentials
+
+`KLING_API_KEY` is read from the OS environment before either `.env` file, so a key exported into
+the environment the engine started from wins over anything configured in Settings. When Kling
+rejects a credential, or reports the account balance as empty, the node says which mechanism
+supplied the token so a forgotten API key is not mistaken for a broken key pair.
+
+## Retired models
+
+Kling retires models per endpoint rather than across the whole API, so a model can keep working in
+one node after it stops working in another. The nodes offer only the models their endpoint still
+serves:
+
+| Node | Models |
+| --- | --- |
+| Text to Video | `kling-v3`, `kling-v2-6`, `kling-v2-5-turbo` |
+| Image to Video | `kling-v3`, `kling-v2-6`, `kling-v2-5-turbo` |
+| Lip Sync | `kling-v1-5`, `kling-v1-6`, `kling-v2`, `kling-v2-1` |
+
+A workflow saved while a now-retired model was still offered runs on the node's default model
+instead, and reports the substitution in the log. Pick a current model and save the workflow to
+stop it being reported.
+
 Below is a description of each node and its parameters.
 
 ### Kling AI Text to Video (`KlingAI_TextToVideo`)
@@ -45,7 +68,7 @@ Generates a video from a text prompt.
 | Parameter                | Type    | Description                                                                                                | Default Value   |
 |--------------------------|---------|------------------------------------------------------------------------------------------------------------|-----------------|
 | `prompt`                 | `str`   | Text prompt for video generation (max 2500 chars).                                                         |                 |
-| `model_name`             | `str`   | Model Name.                                                                                                | `kling-v1`      |
+| `model_name`             | `str`   | Model Name. Choices: `kling-v3`, `kling-v2-6`, `kling-v2-5-turbo`.                                          | `kling-v3`      |
 | `negative_prompt`        | `str`   | Negative text prompt (max 2500 chars).                                                                     | `""`            |
 | `cfg_scale`              | `float` | Flexibility in video generation (0-1). Higher value = lower flexibility, stronger prompt relevance.        | `0.5`           |
 | `mode`                   | `str`   | Video generation mode (`std`: Standard, `pro`: Professional).                                              | `std`           |
@@ -85,7 +108,7 @@ Generates a video from a reference image and optional text prompts.
 | `image_tail`              | `ImageArtifact` / `str`       | Reference Image - End frame control. Input `ImageArtifact`, `ImageUrlArtifact`, direct URL string, or Base64 string.                       | `None`          |
 | `prompt`                  | `str`                         | Positive text prompt (max 2500 chars).                                                                                                    | `""`            |
 | `negative_prompt`         | `str`                         | Negative text prompt (max 2500 chars).                                                                                                    | `""`            |
-| `model_name`              | `str`                         | Model Name for generation. Choices: `kling-v1`, `kling-v1-5`, `kling-v1-6`.                                                                 | `kling-v1`      |
+| `model_name`              | `str`                         | Model Name for generation. Choices: `kling-v3`, `kling-v2-6`, `kling-v2-5-turbo`.                                                            | `kling-v3`      |
 | `cfg_scale`               | `float`                       | Flexibility (0-1). Higher value = lower flexibility, stronger prompt relevance.                                                         | `0.5`           |
 | `mode`                    | `str`                         | Video generation mode (`std`: Standard, `pro`: Professional).                                                                             | `std`           |
 | `duration`                | `str`                         | Video Length in seconds. Choices: `5`, `10`.                                                                                                | `5`             |
