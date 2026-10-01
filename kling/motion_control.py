@@ -2,7 +2,6 @@ import base64
 import time
 from typing import Any
 
-import jwt
 import requests
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact, VideoUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
@@ -13,28 +12,15 @@ from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.files.file import File, FileLoadError
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
+from kling_auth import get_auth_headers, validate_credentials
 
-SERVICE = "Kling"
-API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
-SECRET_KEY_ENV_VAR = "KLING_SECRET_KEY"  # noqa: S105
 BASE_URL = "https://api.klingai.com/v1/videos/motion-control"
 
 MAX_PROMPT_LENGTH = 2500
 POLL_INTERVAL_SECONDS = 5
 POLL_TIMEOUT_SECONDS = 1200
-
-
-def encode_jwt_token(access_key: str, secret_key: str) -> str:
-    headers = {"alg": "HS256", "typ": "JWT"}
-    payload = {
-        "iss": access_key,
-        "exp": int(time.time()) + 1800,  # valid for 30 minutes
-        "nbf": int(time.time()) - 5,  # valid 5 seconds ago
-    }
-    token = jwt.encode(payload, secret_key, algorithm="HS256", headers=headers)
-    return token
 
 
 class KlingAI_MotionControl(SuccessFailureNode):
@@ -168,8 +154,7 @@ class KlingAI_MotionControl(SuccessFailureNode):
             self._handle_failure_exception(exc)
 
     def _process(self) -> None:
-        api_token = self._get_api_token()
-        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_token}"}
+        headers = get_auth_headers()
 
         params = self._get_parameters()
         prompt = params["prompt"]
@@ -205,15 +190,6 @@ class KlingAI_MotionControl(SuccessFailureNode):
             return
 
         self._poll_for_result(task_id, headers)
-
-    def _get_api_token(self) -> str:
-        access_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
-        secret_key = GriptapeNodes.SecretsManager().get_secret(SECRET_KEY_ENV_VAR)
-        if not access_key:
-            raise ValueError(f"{self.name} is missing {API_KEY_ENV_VAR}. Ensure it's set in the environment/config.")
-        if not secret_key:
-            raise ValueError(f"{self.name} is missing {SECRET_KEY_ENV_VAR}. Ensure it's set in the environment/config.")
-        return encode_jwt_token(access_key, secret_key)
 
     def _get_parameters(self) -> dict[str, Any]:
         prompt = self.get_parameter_value("prompt")
@@ -469,11 +445,5 @@ class KlingAI_MotionControl(SuccessFailureNode):
         self.parameter_output_values["kling_video_id"] = ""
 
     def validate_before_workflow_run(self) -> list[Exception] | None:
-        exceptions = []
-        access_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
-        secret_key = GriptapeNodes.SecretsManager().get_secret(SECRET_KEY_ENV_VAR)
-        if not access_key:
-            exceptions.append(KeyError(f"{self.name}: {API_KEY_ENV_VAR} is not configured"))
-        if not secret_key:
-            exceptions.append(KeyError(f"{self.name}: {SECRET_KEY_ENV_VAR} is not configured"))
+        exceptions = validate_credentials()
         return exceptions if exceptions else None

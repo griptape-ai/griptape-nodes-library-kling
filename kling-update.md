@@ -408,32 +408,25 @@ def after_value_set(self, parameter, value, modified_parameters_set):
         return super().after_value_set(parameter, value, modified_parameters_set)
 ```
 
-#### Environment Variable Pattern
+#### Credential Pattern
+
+`kling_auth.py` owns both credential mechanisms (a single `KLING_API_KEY`, or the older
+`KLING_ACCESS_KEY` / `KLING_SECRET_KEY` pair signed into a JWT). Nodes never read the secrets
+themselves:
+
 ```python
-SERVICE = "Kling"
-API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
-SECRET_KEY_ENV_VAR = "KLING_SECRET_KEY"
+from kling_auth import get_auth_headers, validate_credentials
+
 BASE_URL = "https://api-singapore.klingai.com/v1"
 
-def _get_api_credentials(self) -> tuple[str, str]:
-    access_key = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
-    secret_key = self.get_config_value(service=SERVICE, value=SECRET_KEY_ENV_VAR)
-    if not access_key or not secret_key:
-        raise ValueError(f"Kling credentials not found. Set {API_KEY_ENV_VAR} and {SECRET_KEY_ENV_VAR}")
-    return access_key, secret_key
+headers = get_auth_headers()  # raises ValueError when no mechanism is configured
 ```
 
 ### Validation Strategy
 ```python
 def validate_node(self) -> list[Exception] | None:
-    errors = []
-    
-    # Check API credentials
-    try:
-        self._get_api_credentials()
-    except ValueError as e:
-        errors.append(e)
-    
+    errors = validate_credentials()
+
     # Model-specific validation matrix
     model = self.get_parameter_value("model_name")
     mode = self.get_parameter_value("mode")

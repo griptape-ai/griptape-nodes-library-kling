@@ -1,7 +1,5 @@
-"""Public exports for the Kling nodes package."""
+"""Nodes in the Kling AI library.
 
-from .image_to_video import KlingAI_ImageToVideo  # noqa: F401
-from .lip_sync import KlingAI_LipSync  # noqa: F401
-from .motion_control import KlingAI_MotionControl  # noqa: F401
-from .text_to_video import KlingAI_TextToVideo  # noqa: F401
-from .video_extension import KlingAI_VideoExtension  # noqa: F401
+Node modules import their siblings as top-level modules, because the library loader puts this
+directory on ``sys.path``. Re-exporting them here would make those imports fail.
+"""

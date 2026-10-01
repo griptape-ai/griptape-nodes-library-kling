@@ -3,34 +3,20 @@ import json
 import time
 from typing import Any
 
-import jwt
 import requests
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact, VideoUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes.traits.widget import Widget
+from kling_auth import get_auth_headers, validate_credentials
 
-SERVICE = "Kling"
-API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
-SECRET_KEY_ENV_VAR = "KLING_SECRET_KEY"  # noqa: S105
 IMAGE2VIDEO_URL = "https://api.klingai.com/v1/videos/image2video"
 TEXT2VIDEO_URL = "https://api.klingai.com/v1/videos/text2video"
-
-
-def encode_jwt_token(ak: str, sk: str) -> str:
-    headers = {"alg": "HS256", "typ": "JWT"}
-    payload = {
-        "iss": ak,
-        "exp": int(time.time()) + 1800,
-        "nbf": int(time.time()) - 5,
-    }
-    token = jwt.encode(payload, sk, algorithm="HS256", headers=headers)
-    return token
 
 
 class KlingV3MultiShot(ControlNode):
@@ -204,14 +190,7 @@ class KlingV3MultiShot(ControlNode):
         return url_string
 
     def validate_node(self) -> list[Exception] | None:
-        errors = []
-
-        access_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
-        secret_key = GriptapeNodes.SecretsManager().get_secret(SECRET_KEY_ENV_VAR)
-        if not access_key:
-            errors.append(ValueError(f"Kling access key not found. Set {API_KEY_ENV_VAR}."))
-        if not secret_key:
-            errors.append(ValueError(f"Kling secret key not found. Set {SECRET_KEY_ENV_VAR}."))
+        errors = validate_credentials()
 
         shots = self.parameter_values.get("shots", self.DEFAULT_SHOTS)
         if not shots:
@@ -242,10 +221,7 @@ class KlingV3MultiShot(ControlNode):
             error_message = "; ".join(str(e) for e in validation_errors)
             raise ValueError(f"Validation failed: {error_message}")
 
-        access_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
-        secret_key = GriptapeNodes.SecretsManager().get_secret(SECRET_KEY_ENV_VAR)
-        jwt_token = encode_jwt_token(access_key, secret_key)
-        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {jwt_token}"}
+        headers = get_auth_headers()
 
         # Build multi_prompt from shots (1-based index per API spec)
         shots = self.parameter_values.get("shots", self.DEFAULT_SHOTS)

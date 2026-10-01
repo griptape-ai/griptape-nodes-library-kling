@@ -3,7 +3,6 @@ import json
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import jwt
 import requests
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact, VideoUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
@@ -11,25 +10,12 @@ from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.files.file import File, FileLoadError
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
+from kling_auth import get_auth_headers, validate_credentials
 
-SERVICE = "Kling"
-API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
-SECRET_KEY_ENV_VAR = "KLING_SECRET_KEY"  # noqa: S105
 BASE_URL = "https://api.klingai.com/v1/videos/image2video"  # Global endpoint per latest docs
-
-
-def encode_jwt_token(ak: str, sk: str) -> str:
-    headers = {"alg": "HS256", "typ": "JWT"}
-    payload = {
-        "iss": ak,
-        "exp": int(time.time()) + 1800,  # valid for 30 minutes
-        "nbf": int(time.time()) - 5,  # valid 5 seconds ago
-    }
-    token = jwt.encode(payload, sk, algorithm="HS256", headers=headers)
-    return token
 
 
 class KlingAI_ImageToVideo(ControlNode):
@@ -360,14 +346,7 @@ class KlingAI_ImageToVideo(ControlNode):
         return self._get_image_api_data_from_input(image_input)
 
     def validate_node(self) -> list[Exception] | None:
-        errors = []
-        access_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
-        secret_key = GriptapeNodes.SecretsManager().get_secret(SECRET_KEY_ENV_VAR)
-
-        if not access_key:
-            errors.append(ValueError(f"Kling access key not found. Set {API_KEY_ENV_VAR}."))
-        if not secret_key:
-            errors.append(ValueError(f"Kling secret key not found. Set {SECRET_KEY_ENV_VAR}."))
+        errors = validate_credentials()
 
         # Validate images (at least one of image or image_tail must be provided)
         image_val = self._get_image_api_data("image")
@@ -519,10 +498,7 @@ class KlingAI_ImageToVideo(ControlNode):
         logger.info(f"Kling Image-to-Video API Request Payload: {json.dumps(log_payload, indent=2)}")
 
         def generate_video_job(job_index: int) -> tuple[VideoUrlArtifact, str | None]:
-            access_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
-            secret_key = GriptapeNodes.SecretsManager().get_secret(SECRET_KEY_ENV_VAR)
-            jwt_token = encode_jwt_token(access_key, secret_key)  # type: ignore[arg-type]
-            headers = {"Content-Type": "application/json", "Authorization": f"Bearer {jwt_token}"}
+            headers = get_auth_headers()
 
             payload = base_payload.copy()
             if external_task_id_val and external_task_id_val.strip():

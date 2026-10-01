@@ -1,20 +1,17 @@
 import json
 import time
 
-import jwt
 import requests
 from griptape.artifacts import UrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.files.file import File
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes.traits.options import Options
+from kling_auth import get_auth_headers, validate_credentials
 
-SERVICE = "Kling"
-API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
-SECRET_KEY_ENV_VAR = "KLING_SECRET_KEY"  # noqa: S105
 BASE_URL = "https://api-singapore.klingai.com/v1/videos/lip-sync"
 
 
@@ -25,17 +22,6 @@ class VideoUrlArtifact(UrlArtifact):
 
     def __init__(self, url: str, name: str | None = None):
         super().__init__(value=url, name=name or self.__class__.__name__)
-
-
-def encode_jwt_token(ak: str, sk: str) -> str:
-    headers = {"alg": "HS256", "typ": "JWT"}
-    payload = {
-        "iss": ak,
-        "exp": int(time.time()) + 1800,  # valid for 30 minutes
-        "nbf": int(time.time()) - 5,  # valid 5 seconds ago
-    }
-    token = jwt.encode(payload, sk, algorithm="HS256", headers=headers)
-    return token
 
 
 class KlingAI_LipSync(ControlNode):
@@ -316,14 +302,7 @@ class KlingAI_LipSync(ControlNode):
 
     def validate_node(self) -> list[Exception] | None:
         """Validates that the Kling API keys are configured and parameters are valid."""
-        errors = []
-        access_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
-        secret_key = GriptapeNodes.SecretsManager().get_secret(SECRET_KEY_ENV_VAR)
-
-        if not access_key:
-            errors.append(ValueError(f"Kling access key not found. Set {API_KEY_ENV_VAR}."))
-        if not secret_key:
-            errors.append(ValueError(f"Kling secret key not found. Set {SECRET_KEY_ENV_VAR}."))
+        errors = validate_credentials()
 
         # Check required video input based on type
         video_input_type = self.get_parameter_value("video_input_type")
@@ -423,10 +402,7 @@ class KlingAI_LipSync(ControlNode):
             raise ValueError(f"Validation failed: {error_message}")
 
         def create_lip_sync() -> VideoUrlArtifact:
-            access_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
-            secret_key = GriptapeNodes.SecretsManager().get_secret(SECRET_KEY_ENV_VAR)
-            jwt_token = encode_jwt_token(access_key, secret_key)
-            headers = {"Content-Type": "application/json", "Authorization": f"Bearer {jwt_token}"}
+            headers = get_auth_headers()
 
             # Build input object for new API structure
             input_obj = {"model_name": self.get_parameter_value("model_name"), "mode": self.get_parameter_value("mode")}

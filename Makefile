@@ -95,8 +95,12 @@ fix: ## Fix project.
 	@make format
 	@uv run ruff check --fix --unsafe-fixes
 
+.PHONY: test
+test: ## Run unit tests.
+	@uv run pytest
+
 .PHONY: check
-check: check/format check/lint check/types ## Run all checks.
+check: check/format check/lint check/types check/test ## Run all checks.
 
 .PHONY: check/format
 check/format:
@@ -109,6 +113,10 @@ check/lint:
 .PHONY: check/types
 check/types:
 	@uv run pyright .
+
+.PHONY: check/test
+check/test:
+	@uv run pytest
 
 .DEFAULT_GOAL := help
 .PHONY: help
