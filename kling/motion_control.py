@@ -14,6 +14,7 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
+from kling_api import raise_for_kling_error
 from kling_auth import get_auth_headers, validate_credentials
 
 BASE_URL = "https://api.klingai.com/v1/videos/motion-control"
@@ -310,11 +311,7 @@ class KlingAI_MotionControl(SuccessFailureNode):
         logger.info("Kling Motion Control response status: %s", response.status_code)
         logger.debug("Kling Motion Control response headers: %s", dict(response.headers))
 
-        try:
-            response.raise_for_status()
-        except requests.exceptions.HTTPError as exc:
-            error_msg = f"{self.name} request failed: HTTP {response.status_code} - {response.text}"
-            raise RuntimeError(error_msg) from exc
+        raise_for_kling_error(response, action="submit a motion-control generation to Kling")
 
         try:
             response_json = response.json()

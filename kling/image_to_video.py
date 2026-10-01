@@ -13,7 +13,14 @@ from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
+from kling_api import raise_for_kling_error
 from kling_auth import get_auth_headers, validate_credentials
+from kling_models import (
+    DEFAULT_IMAGE_TO_VIDEO_MODEL,
+    IMAGE_TO_VIDEO_MODELS,
+    RETIRED_IMAGE_TO_VIDEO_MODELS,
+    install_retired_model_migration,
+)
 
 BASE_URL = "https://api.klingai.com/v1/videos/image2video"  # Global endpoint per latest docs
 
@@ -27,31 +34,24 @@ class KlingAI_ImageToVideo(ControlNode):
         self.description = "Generates a video from an image using Kling AI."
 
         # Model Selection (at top)
-        self.add_parameter(
-            Parameter(
-                name="model_name",
-                input_types=["str"],
-                output_type="str",
-                type="str",
-                default_value="kling-v3",
-                tooltip="Model Name for generation.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={
-                    Options(
-                        choices=[
-                            "kling-v3",
-                            "kling-v2-6",
-                            "kling-v2-5-turbo",
-                            "kling-v2-1-master",
-                            "kling-v2-1",
-                            "kling-v2-master",
-                            "kling-v1-5",
-                            "kling-v1",
-                        ]
-                    )
-                },
-                ui_options={"display_name": "Model"},
-            )
+        model_name_parameter = Parameter(
+            name="model_name",
+            input_types=["str"],
+            output_type="str",
+            type="str",
+            default_value=DEFAULT_IMAGE_TO_VIDEO_MODEL,
+            tooltip="Model Name for generation.",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            traits={Options(choices=list(IMAGE_TO_VIDEO_MODELS))},
+            ui_options={"display_name": "Model"},
+        )
+        self.add_parameter(model_name_parameter)
+        install_retired_model_migration(
+            self,
+            model_name_parameter,
+            live_models=IMAGE_TO_VIDEO_MODELS,
+            retired_models=RETIRED_IMAGE_TO_VIDEO_MODELS,
+            default_model=DEFAULT_IMAGE_TO_VIDEO_MODEL,
         )
 
         # Image Inputs Group
@@ -64,7 +64,7 @@ class KlingAI_ImageToVideo(ControlNode):
             )
             ParameterImage(
                 name="image_tail",
-                tooltip="Tail/End Frame image (optional). Supported on kling-v2-1 with pro mode (5s/10s). Accepts ImageArtifact, ImageUrlArtifact, URL, or Base64.",
+                tooltip="Tail/End Frame image (optional). Supported on kling-v3, and on kling-v2-6 and kling-v2-5-turbo with pro mode (5s/10s). Accepts ImageArtifact, ImageUrlArtifact, URL, or Base64.",
                 allow_output=False,
                 ui_options={"display_name": "Tail Frame"},
             )
@@ -111,7 +111,7 @@ class KlingAI_ImageToVideo(ControlNode):
                 output_type="str",
                 type="str",
                 default_value="pro",
-                tooltip="Video generation mode (std: Standard, pro: Professional). Start/End frame requires pro on kling-v2-1.",
+                tooltip="Video generation mode (std: Standard, pro: Professional). Start/End frame requires pro on kling-v2-6 and kling-v2-5-turbo.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["std", "pro"])},
             )
@@ -363,10 +363,6 @@ class KlingAI_ImageToVideo(ControlNode):
             duration = self.get_parameter_value("duration")
 
         # Only validate if somehow invalid combinations slip through UI
-        if model == "kling-v1" and duration != 5:
-            errors.append(ValueError("kling-v1 only supports 5s duration"))
-        if model in ["kling-v1-5"] and mode != "pro":
-            errors.append(ValueError(f"{model} only supports pro mode"))
         if model == "kling-v2-5-turbo":
             if mode != "pro":
                 errors.append(ValueError("kling-v2-5-turbo only supports pro mode"))
@@ -400,15 +396,14 @@ class KlingAI_ImageToVideo(ControlNode):
             errors.append(ValueError("At least one of 'image' or 'image_tail' must be provided."))
         if image_tail_val:
             end_frame_supported = (
-                (model == "kling-v2-1" and mode == "pro" and duration in [5, 10])
-                or (model == "kling-v2-5-turbo" and mode == "pro" and duration in [5, 10])
+                (model == "kling-v2-5-turbo" and mode == "pro" and duration in [5, 10])
                 or (model == "kling-v2-6" and mode == "pro" and duration in [5, 10])
                 or (model == "kling-v3")
             )
             if not end_frame_supported:
                 errors.append(
                     ValueError(
-                        "image_tail is only supported on models kling-v2-1, kling-v2-5-turbo, kling-v2-6 (with mode=pro and duration 5 or 10), and kling-v3."
+                        "image_tail is only supported on models kling-v2-5-turbo and kling-v2-6 (with mode=pro and duration 5 or 10), and kling-v3."
                     )
                 )
 
@@ -508,17 +503,7 @@ class KlingAI_ImageToVideo(ControlNode):
             logger.info(f"Initial response status: {response.status_code}")
             logger.info(f"Initial response headers: {dict(response.headers)}")
             logger.info(f"Initial response text: {response.text}")
-            try:
-                response.raise_for_status()  # Raise HTTPError for bad responses (4XX or 5XX)
-            except requests.exceptions.HTTPError:
-                logger.error(f"HTTP Error {response.status_code}: {response.text}")
-                if response.status_code == 400:
-                    try:
-                        error_data = response.json()
-                        logger.error(f"API Error Details: {json.dumps(error_data, indent=2)}")
-                    except json.JSONDecodeError:
-                        logger.error("Could not parse error response as JSON")
-                raise
+            raise_for_kling_error(response, action="submit an image-to-video generation to Kling")
 
             task_id = response.json()["data"]["task_id"]
 
@@ -647,20 +632,6 @@ class KlingAI_ImageToVideo(ControlNode):
             if value == "kling-v3":
                 self.show_parameter_by_name(["mode", "klingv3_duration", "sound"])
                 self.hide_parameter_by_name("duration")
-            elif value == "kling-v1":
-                # kling-v1: only 5s duration, std or pro mode
-                self.show_parameter_by_name("mode")
-                self.hide_parameter_by_name(["klingv3_duration", "duration", "sound"])
-                current_duration = self.get_parameter_value("duration")
-                if current_duration != 5:
-                    self.set_parameter_value("duration", 5)
-            elif value in ["kling-v1-5"]:
-                # kling-v1-5: only pro mode, either duration
-                self.hide_parameter_by_name(["mode", "klingv3_duration", "sound"])
-                self.show_parameter_by_name("duration")
-                current_mode = self.get_parameter_value("mode")
-                if current_mode != "pro":
-                    self.set_parameter_value("mode", "pro")
             elif value == "kling-v2-5-turbo":
                 # v2.5 turbo: pro-only, durations 5 or 10
                 self.hide_parameter_by_name(["mode", "klingv3_duration", "sound"])
@@ -678,10 +649,6 @@ class KlingAI_ImageToVideo(ControlNode):
                 current_duration = self.get_parameter_value("duration")
                 if current_duration not in [5, 10]:
                     self.set_parameter_value("duration", 5)
-            else:
-                # kling-v2+: all modes and durations available
-                self.show_parameter_by_name(["mode", "duration"])
-                self.hide_parameter_by_name(["klingv3_duration", "sound"])
 
             # Add all potentially modified parameters to the set if provided
             if modified_parameters_set is not None:

@@ -17,7 +17,7 @@
     "metadata": {
         "author": "Griptape",
         "description": "Nodes for interacting with the Kling AI API",
-        "library_version": "0.2.0",
+        "library_version": "0.3.0",
         "engine_version": "0.75.0",
         "tags": [
             "Griptape",

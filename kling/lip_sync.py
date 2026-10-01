@@ -10,7 +10,9 @@ from griptape_nodes.files.file import File
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes.traits.options import Options
+from kling_api import raise_for_kling_error
 from kling_auth import get_auth_headers, validate_credentials
+from kling_models import LIP_SYNC_MODELS
 
 BASE_URL = "https://api-singapore.klingai.com/v1/videos/lip-sync"
 
@@ -42,7 +44,7 @@ class KlingAI_LipSync(ControlNode):
                 default_value="kling-v2-1",
                 tooltip="Model for lip sync generation.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["kling-v1-5", "kling-v1-6", "kling-v2", "kling-v2-1"])},
+                traits={Options(choices=list(LIP_SYNC_MODELS))},
                 ui_options={"display_name": "Model"},
             )
         )
@@ -505,10 +507,10 @@ class KlingAI_LipSync(ControlNode):
             except:
                 logger.info(f"Kling API Response Text: {response.text}")
 
-            response.raise_for_status()
+            raise_for_kling_error(response, action="submit a lip-sync generation to Kling")
 
             if not response_json:
-                response_json = response.json()  # Try again after raise_for_status
+                response_json = response.json()  # Try again after raise_for_kling_error
             task_id = response_json["data"]["task_id"]
 
             poll_url = f"{BASE_URL}/{task_id}"
