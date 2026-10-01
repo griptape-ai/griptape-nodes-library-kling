@@ -1,7 +1,8 @@
 .env
 .DS_Store
 .env.local
-/kling/__pycache__
+__pycache__/
+.pytest_cache/
 node-development-guide-v2.md
 /kling_test/venv
 /kling_test

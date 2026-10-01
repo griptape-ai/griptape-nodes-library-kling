@@ -2,34 +2,18 @@ import json
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import jwt
 import requests
 from griptape.artifacts import VideoUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.files.file import File
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
+from kling_auth import get_auth_headers, validate_credentials
 
-SERVICE = "Kling"
-API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
-SECRET_KEY_ENV_VAR = "KLING_SECRET_KEY"  # noqa: S105
 BASE_URL = "https://api-singapore.klingai.com/v1/videos/text2video"
-
-
-def encode_jwt_token(ak: str, sk: str) -> str:
-    headers = {"alg": "HS256", "typ": "JWT"}
-
-    payload = {
-        "iss": ak,
-        "exp": int(time.time()) + 1800,  # valid for 30 minutes
-        "nbf": int(time.time()) - 5,  # valid 5 seconds ago
-    }
-
-    token = jwt.encode(payload, sk, algorithm="HS256", headers=headers)
-    return token
 
 
 class KlingAI_TextToVideo(ControlNode):
@@ -275,18 +259,7 @@ class KlingAI_TextToVideo(ControlNode):
         Returns:
             list[Exception] | None: List of exceptions if validation fails, None if validation passes.
         """
-        access_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
-        secret_key = GriptapeNodes.SecretsManager().get_secret(SECRET_KEY_ENV_VAR)
-
-        errors = []
-        if not access_key:
-            errors.append(
-                ValueError(f"Kling access key not found. Please set the {API_KEY_ENV_VAR} environment variable.")
-            )
-        if not secret_key:
-            errors.append(
-                ValueError(f"Kling secret key not found. Please set the {SECRET_KEY_ENV_VAR} environment variable.")
-            )
+        errors = validate_credentials()
 
         # Negative prompt length validation
         negative_prompt = self.get_parameter_value("negative_prompt")
@@ -382,12 +355,7 @@ class KlingAI_TextToVideo(ControlNode):
         prompt = self.get_parameter_value("prompt")
 
         def generate_video_job(job_index: int) -> tuple[VideoUrlArtifact, str | None]:
-            access_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
-            secret_key = GriptapeNodes.SecretsManager().get_secret(SECRET_KEY_ENV_VAR)
-
-            jwt_token = encode_jwt_token(access_key, secret_key)
-
-            headers = {"Content-Type": "application/json", "Authorization": f"Bearer {jwt_token}"}
+            headers = get_auth_headers()
 
             model_name = self.get_parameter_value("model_name")
 

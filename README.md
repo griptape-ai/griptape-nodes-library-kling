@@ -2,15 +2,37 @@
 
 This library provides Griptape Nodes for interacting with the Kling AI video generation services. You can use these nodes to generate videos from text prompts, images, extend existing videos, or create lip-sync videos.
 
-**IMPORTANT:** To use these nodes, you will need API keys from Kling AI. Please visit the [Kling AI website](https://klingai.com) for more information on how to obtain your keys.
+## Credentials
 
-To configure your keys within the Griptape Nodes IDE:
+**IMPORTANT:** To use these nodes, you will need credentials from Kling AI. Please visit the [Kling AI website](https://klingai.com) for more information on how to obtain them.
+
+Kling accepts two kinds of credentials, and this library supports both:
+
+| Credential | Secrets to set | Use it when |
+| --- | --- | --- |
+| **API key** (recommended) | `KLING_API_KEY` | You are setting Kling up for the first time. |
+| Access Key / Secret Key pair | `KLING_ACCESS_KEY` and `KLING_SECRET_KEY` | Your Kling account still issues the older key pair. |
+
+Kling now issues a single API key, so use `KLING_API_KEY` unless you already have a key pair.
+
+To configure your credentials within the Griptape Nodes IDE:
 1. Open the **Settings** menu.
 2. Navigate to the **API Keys & Secrets** panel.
 3. Add a new secret configuration for the service named `Kling`.
-4. Enter your `KLING_ACCESS_KEY` and `KLING_SECRET_KEY` in the respective fields.
+4. Enter your `KLING_API_KEY`. Leave `KLING_ACCESS_KEY` and `KLING_SECRET_KEY` empty.
 
 ![Configuring Kling API Keys](./images/secrets.png)
+
+### Migrating from the Access Key / Secret Key pair
+
+Set `KLING_API_KEY` to your new API key. The nodes prefer it as soon as it is set, so you do not
+have to clear `KLING_ACCESS_KEY` and `KLING_SECRET_KEY` first. Once generations succeed, you can
+remove the old pair.
+
+If you leave `KLING_API_KEY` empty, the nodes fall back to signing a request token from
+`KLING_ACCESS_KEY` and `KLING_SECRET_KEY`, so existing setups keep working untouched. Note that
+both halves of the pair are required: setting only one leaves Kling unauthenticated, and the nodes
+report which half is missing.
 
 Below is a description of each node and its parameters.
 

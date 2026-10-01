@@ -3,10 +3,11 @@
     "library_schema_version": "0.1.0",
     "settings": [
         {
-            "description": "API keys required by nodes in this library",
+            "description": "API keys required by nodes in this library. Set KLING_API_KEY, or the legacy KLING_ACCESS_KEY and KLING_SECRET_KEY pair.",
             "category": "app_events.on_app_initialization_complete",
             "contents": {
                 "secrets_to_register": [
+                    "KLING_API_KEY",
                     "KLING_ACCESS_KEY",
                     "KLING_SECRET_KEY"
                 ]
@@ -16,7 +17,7 @@
     "metadata": {
         "author": "Griptape",
         "description": "Nodes for interacting with the Kling AI API",
-        "library_version": "0.1.3",
+        "library_version": "0.2.0",
         "engine_version": "0.75.0",
         "tags": [
             "Griptape",
