@@ -13,6 +13,7 @@ from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes.traits.widget import Widget
+from kling_api import raise_for_kling_error
 from kling_auth import get_auth_headers, validate_credentials
 
 IMAGE2VIDEO_URL = "https://api.klingai.com/v1/videos/image2video"
@@ -294,11 +295,7 @@ class KlingV3MultiShot(ControlNode):
         logger.info(f"Initial response status: {response.status_code}")
         logger.info(f"Initial response text: {response.text[:500]}")
 
-        try:
-            response.raise_for_status()
-        except requests.exceptions.HTTPError:
-            logger.error(f"HTTP Error {response.status_code}: {response.text}")
-            raise
+        raise_for_kling_error(response, action="submit a multi-shot generation to Kling")
 
         task_id = response.json()["data"]["task_id"]
         logger.info(f"Task created with ID: {task_id}")

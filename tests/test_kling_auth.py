@@ -21,6 +21,7 @@ from kling_auth import (
     JWT_LIFETIME_SECONDS,
     JWT_NOT_BEFORE_LEEWAY_SECONDS,
     SECRET_KEY_ENV_VAR,
+    credential_precedence_note,
     get_auth_headers,
     get_auth_token,
     validate_credentials,
@@ -165,3 +166,46 @@ def test_validation_reports_incomplete_credentials(secrets: Callable[..., None],
 
     assert len(errors) == 1
     assert isinstance(errors[0], ValueError)
+
+
+def test_the_precedence_note_names_the_mechanism_that_won(secrets: Callable[..., None]) -> None:
+    """Kling rejects a credential from either mechanism with the same code, so the symptom
+    of a forgotten API key shadowing a working pair looks like the pair itself being wrong.
+    """
+    secrets({API_KEY_ENV_VAR: API_KEY, ACCESS_KEY_ENV_VAR: ACCESS_KEY, SECRET_KEY_ENV_VAR: SECRET_KEY})
+
+    note = credential_precedence_note()
+
+    assert note is not None
+    assert API_KEY_ENV_VAR in note
+    assert ACCESS_KEY_ENV_VAR in note
+    assert SECRET_KEY_ENV_VAR in note
+
+
+def test_the_precedence_note_never_quotes_a_secret(secrets: Callable[..., None]) -> None:
+    """The note is reported in a node's error message, which users paste into issues."""
+    secrets({API_KEY_ENV_VAR: API_KEY, ACCESS_KEY_ENV_VAR: ACCESS_KEY, SECRET_KEY_ENV_VAR: SECRET_KEY})
+
+    note = credential_precedence_note()
+
+    assert note is not None
+    for secret_value in (API_KEY, ACCESS_KEY, SECRET_KEY):
+        assert secret_value not in note
+
+
+@pytest.mark.parametrize(
+    "configured",
+    [
+        pytest.param({API_KEY_ENV_VAR: API_KEY}, id="api-key-only"),
+        pytest.param({ACCESS_KEY_ENV_VAR: ACCESS_KEY, SECRET_KEY_ENV_VAR: SECRET_KEY}, id="pair-only"),
+        pytest.param({API_KEY_ENV_VAR: API_KEY, ACCESS_KEY_ENV_VAR: ACCESS_KEY}, id="api-key-and-half-a-pair"),
+        pytest.param({}, id="nothing"),
+    ],
+)
+def test_there_is_no_precedence_note_without_a_shadowed_mechanism(
+    secrets: Callable[..., None], configured: dict[str, str]
+) -> None:
+    """With one mechanism configured nothing was shadowed, so the note would only mislead."""
+    secrets(configured)
+
+    assert credential_precedence_note() is None

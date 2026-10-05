@@ -11,7 +11,14 @@ from griptape_nodes.files.file import File
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
+from kling_api import raise_for_kling_error
 from kling_auth import get_auth_headers, validate_credentials
+from kling_models import (
+    DEFAULT_TEXT_TO_VIDEO_MODEL,
+    RETIRED_TEXT_TO_VIDEO_MODELS,
+    TEXT_TO_VIDEO_MODELS,
+    install_retired_model_migration,
+)
 
 BASE_URL = "https://api-singapore.klingai.com/v1/videos/text2video"
 
@@ -33,28 +40,23 @@ class KlingAI_TextToVideo(ControlNode):
                 ui_options={"multiline": True, "placeholder_text": "Describe the video you want..."},
             )
         )
-        self.add_parameter(
-            Parameter(
-                name="model_name",
-                input_types=["str"],
-                output_type="str",
-                type="str",
-                default_value="kling-v3",
-                tooltip="Model Name",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={
-                    Options(
-                        choices=[
-                            "kling-v3",
-                            "kling-v2-6",
-                            "kling-v2-5-turbo",
-                            "kling-v2-1-master",
-                            "kling-v2-master",
-                            "kling-v1-6",
-                        ]
-                    )
-                },
-            )
+        model_name_parameter = Parameter(
+            name="model_name",
+            input_types=["str"],
+            output_type="str",
+            type="str",
+            default_value=DEFAULT_TEXT_TO_VIDEO_MODEL,
+            tooltip="Model Name",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            traits={Options(choices=list(TEXT_TO_VIDEO_MODELS))},
+        )
+        self.add_parameter(model_name_parameter)
+        install_retired_model_migration(
+            self,
+            model_name_parameter,
+            live_models=TEXT_TO_VIDEO_MODELS,
+            retired_models=RETIRED_TEXT_TO_VIDEO_MODELS,
+            default_model=DEFAULT_TEXT_TO_VIDEO_MODEL,
         )
         self.add_parameter(
             Parameter(
@@ -332,11 +334,6 @@ class KlingAI_TextToVideo(ControlNode):
                     self.set_parameter_value("duration", 5)
                 if modified_parameters_set is not None:
                     modified_parameters_set.update(["mode", "klingv3_duration", "duration", "sound"])
-            else:
-                self.show_parameter_by_name(["mode", "aspect_ratio", "duration"])
-                self.hide_parameter_by_name(["klingv3_duration", "sound"])  # Other models don't support sound
-                if modified_parameters_set is not None:
-                    modified_parameters_set.update(["mode", "aspect_ratio", "klingv3_duration", "duration", "sound"])
         if parameter.name == "num_videos":
             num_videos = self.get_parameter_value("num_videos")
             if num_videos is None:
@@ -399,7 +396,7 @@ class KlingAI_TextToVideo(ControlNode):
             logger.info(f"Initial response text: {response.text[:500]}...")  # First 500 chars
 
             try:
-                response.raise_for_status()
+                raise_for_kling_error(response, action="submit a text-to-video generation to Kling")
                 response_data = response.json()
                 task_id = response_data["data"]["task_id"]
                 logger.info(f"Task created with ID: {task_id}")
