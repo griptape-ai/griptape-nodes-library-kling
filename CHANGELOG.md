@@ -10,4 +10,4 @@ the `library_version` in `kling/griptape_nodes_library.json`.
 
 <!-- Entries go in changelog.d/, one file each. See changelog.d/README.md. -->
 
-[Unreleased]: https://github.com/griptape-ai/griptape-nodes-library-kling/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/griptape-ai/griptape-nodes-library-kling/compare/d6f691741140bfbc4a83edcb1185d7b8cad1f153...HEAD
