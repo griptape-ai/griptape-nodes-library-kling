@@ -3,7 +3,7 @@ import time
 
 import requests
 from griptape.artifacts import UrlArtifact
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import NodeError, Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.files.file import File
@@ -12,6 +12,13 @@ from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes.traits.options import Options
 from kling_api import raise_for_kling_error
 from kling_auth import get_auth_headers, validate_credentials
+from kling_errors import (
+    error_from_request_exception,
+    task_failed_error,
+    task_id_from_response,
+    task_timeout_error,
+    validation_errors_to_raise,
+)
 from kling_models import LIP_SYNC_MODELS
 
 BASE_URL = "https://api-singapore.klingai.com/v1/videos/lip-sync"
@@ -302,49 +309,57 @@ class KlingAI_LipSync(ControlNode):
             )
         )
 
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Report a missing Kling credential first and on its own, so the Settings link shows immediately."""
+        base_errors = super().validate_before_node_run()
+        credential_errors = validate_credentials()
+        if credential_errors:
+            return list(credential_errors)
+        return base_errors
+
     def validate_node(self) -> list[Exception] | None:
         """Validates that the Kling API keys are configured and parameters are valid."""
-        errors = validate_credentials()
+        errors: list[Exception] = []
 
         # Check required video input based on type
         video_input_type = self.get_parameter_value("video_input_type")
         if video_input_type == "video_id":
             video_id = self.get_parameter_value("video_id")
             if not video_id or not video_id.strip():
-                errors.append(ValueError("Video ID is required when using video_id input type."))
+                errors.append(NodeError("Video ID is required when using video_id input type."))
         elif video_input_type == "video_url":
             video_url = self.get_parameter_value("video_url")
             if not video_url:
-                errors.append(ValueError("Video URL or file is required when using video_url input type."))
+                errors.append(NodeError("Video URL or file is required when using video_url input type."))
 
         # Validate mode-specific parameters
         mode = self.get_parameter_value("mode")
         if mode == "text2video":
             text = self.get_parameter_value("text")
             if not text or not text.strip():
-                errors.append(ValueError("Text is required when mode is 'text2video'."))
+                errors.append(NodeError("Text is required when mode is 'text2video'."))
             elif len(text.strip()) > 120:
-                errors.append(ValueError("Text content cannot exceed 120 characters."))
+                errors.append(NodeError("Text content cannot exceed 120 characters."))
 
             voice_id = self.get_parameter_value("voice_id")
             if not voice_id or not voice_id.strip():
-                errors.append(ValueError("Voice ID is required when mode is 'text2video'."))
+                errors.append(NodeError("Voice ID is required when mode is 'text2video'."))
 
         elif mode == "audio2video":
             audio_type = self.get_parameter_value("audio_type")
             if audio_type == "file":
                 audio_file = self.get_parameter_value("audio_file")
                 if not audio_file:
-                    errors.append(ValueError("Audio file is required when audio_type is 'file'."))
+                    errors.append(NodeError("Audio file is required when audio_type is 'file'."))
             elif audio_type == "url":
                 audio_url = self.get_parameter_value("audio_url")
                 if not audio_url or not audio_url.strip():
-                    errors.append(ValueError("Audio URL is required when audio_type is 'url'."))
+                    errors.append(NodeError("Audio URL is required when audio_type is 'url'."))
 
         # Validate voice speed range
         voice_speed = self.get_parameter_value("voice_speed")
         if not (0.8 <= voice_speed <= 2.0):
-            errors.append(ValueError("Voice speed must be between 0.8 and 2.0."))
+            errors.append(NodeError("Voice speed must be between 0.8 and 2.0."))
 
         return errors if errors else None
 
@@ -398,10 +413,13 @@ class KlingAI_LipSync(ControlNode):
 
     def _process(self):
         # Validate before processing
+        credential_errors = validate_credentials()
+        if credential_errors:
+            raise credential_errors[0]
+
         validation_errors = self.validate_node()
         if validation_errors:
-            error_message = "; ".join(str(e) for e in validation_errors)
-            raise ValueError(f"Validation failed: {error_message}")
+            raise validation_errors_to_raise(validation_errors)
 
         def create_lip_sync() -> VideoUrlArtifact:
             headers = get_auth_headers()
@@ -443,7 +461,7 @@ class KlingAI_LipSync(ControlNode):
                 elif audio_type == "url":
                     input_obj["audio_url"] = self.get_parameter_value("audio_url").strip()
             else:
-                raise ValueError(f"Unknown mode: {mode}")
+                raise NodeError(f"Unknown lip-sync mode: {mode!r}.", fields={"parameter": "mode"})
 
             # Build payload based on video input type
             video_input_type = self.get_parameter_value("video_input_type")
@@ -467,8 +485,10 @@ class KlingAI_LipSync(ControlNode):
                     # BlobArtifact or VideoArtifact with binary data - need to upload to get URL
                     # For now, we'll use the artifact directly and let the API handle it
                     # In a production setup, you might want to upload to a file service first
-                    raise ValueError(
-                        "Binary video artifacts require file upload implementation. Please use VideoUrlArtifact or direct URL string."
+                    raise NodeError(
+                        "Kling needs a video URL, and the connected video has no URL. "
+                        "Connect a video that comes from a URL, or enter one in 'Video URL'.",
+                        fields={"parameter": "video_url"},
                     )
                 else:
                     # String URL
@@ -476,12 +496,16 @@ class KlingAI_LipSync(ControlNode):
                     logger.info(f"Using video_url as string: {video_url}")
 
                 if not video_url or not video_url.strip():
-                    raise ValueError("video_url is empty or invalid")
+                    raise NodeError(
+                        "'Video URL' is empty. Connect a video or enter a URL.", fields={"parameter": "video_url"}
+                    )
 
                 input_obj["video_url"] = video_url.strip()
                 logger.info(f"Final video_url in input object: {input_obj['video_url']}")
             else:
-                raise ValueError(f"Unknown video input type: {video_input_type}")
+                raise NodeError(
+                    f"Unknown video input type: {video_input_type!r}.", fields={"parameter": "video_input_type"}
+                )
 
             # Create final payload with input wrapper
             payload = {"input": input_obj}
@@ -509,9 +533,7 @@ class KlingAI_LipSync(ControlNode):
 
             raise_for_kling_error(response, action="submit a lip-sync generation to Kling")
 
-            if not response_json:
-                response_json = response.json()  # Try again after raise_for_kling_error
-            task_id = response_json["data"]["task_id"]
+            task_id = task_id_from_response(response, action="submit a lip-sync generation to Kling")
 
             poll_url = f"{BASE_URL}/{task_id}"
 
@@ -551,23 +573,21 @@ class KlingAI_LipSync(ControlNode):
                         return video_artifact
 
                     if status == "failed":
-                        error_msg = result["data"].get("task_status_msg", "Unknown error")
-                        logger.error(f"Kling lip-sync failed: {error_msg}")
-
-                        # Publish error message to output instead of crashing the node
-                        error_artifact = VideoUrlArtifact(url="")
-                        error_artifact.name = f"Lip-sync failed: {error_msg}"
-                        self.publish_update_to_parameter("lip_sync_video_url", error_artifact)
-                        self.publish_update_to_parameter("task_id", f"FAILED: {error_msg}")
-
-                        logger.info(f"Lip-sync task failed gracefully with message: {error_msg}")
-                        return error_artifact
+                        logger.error(f"Kling lip-sync failed: {result['data'].get('task_status_msg')}")
+                        raise task_failed_error(
+                            "lip-sync", result["data"].get("task_status_msg"), task_id=task_id, result=result
+                        )
 
                 except requests.exceptions.RequestException as e:
                     logger.warning(f"Polling request failed (Attempt {attempt + 1}/{max_retries}): {e}")
                     if attempt == max_retries - 1:
-                        raise RuntimeError(f"Failed to get lip-sync status after multiple retries: {e}") from e
+                        raise error_from_request_exception(
+                            e,
+                            action="check the lip-sync status",
+                            fields={"task_id": task_id},
+                            attempts=max_retries,
+                        ) from e
 
-            raise RuntimeError("Kling lip-sync task timed out.")
+            raise task_timeout_error("lip-sync", task_id=task_id)
 
         return create_lip_sync()

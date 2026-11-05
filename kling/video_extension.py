@@ -3,13 +3,20 @@ import time
 
 import requests
 from griptape.artifacts import UrlArtifact
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.core_types import NodeError, Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.files.file import File
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from kling_api import raise_for_kling_error
 from kling_auth import get_auth_headers, validate_credentials
+from kling_errors import (
+    error_from_request_exception,
+    task_failed_error,
+    task_id_from_response,
+    task_timeout_error,
+    validation_errors_to_raise,
+)
 
 BASE_URL = "https://api-singapore.klingai.com/v1/videos/video-extend"
 
@@ -115,28 +122,39 @@ class KlingAI_VideoExtension(ControlNode):
             )
         )
 
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Report a missing Kling credential first and on its own, so the Settings link shows immediately."""
+        base_errors = super().validate_before_node_run()
+        credential_errors = validate_credentials()
+        if credential_errors:
+            return list(credential_errors)
+        return base_errors
+
     def validate_node(self) -> list[Exception] | None:
         """Validates that the Kling API keys are configured and parameters are valid."""
-        errors = validate_credentials()
+        errors: list[Exception] = []
 
         # Check required video_id
         video_id = self.get_parameter_value("video_id")
         if not video_id or not video_id.strip():
-            errors.append(ValueError("Video ID is required for video extension."))
+            errors.append(NodeError("Video ID is required for video extension."))
 
         # Validate cfg_scale range
         cfg_scale = self.get_parameter_value("cfg_scale")
         if not (0.0 <= cfg_scale <= 1.0):
-            errors.append(ValueError("cfg_scale must be between 0.0 and 1.0."))
+            errors.append(NodeError("cfg_scale must be between 0.0 and 1.0."))
 
         return errors if errors else None
 
     def process(self) -> AsyncResult:
         # Validate before yielding
+        credential_errors = validate_credentials()
+        if credential_errors:
+            raise credential_errors[0]
+
         validation_errors = self.validate_node()
         if validation_errors:
-            error_message = "; ".join(str(e) for e in validation_errors)
-            raise ValueError(f"Validation failed: {error_message}")
+            raise validation_errors_to_raise(validation_errors)
 
         def extend_video() -> VideoUrlArtifact:
             headers = get_auth_headers()
@@ -172,7 +190,7 @@ class KlingAI_VideoExtension(ControlNode):
                     logger.error(f"Kling Video Extension error text: {response.text}")
             raise_for_kling_error(response, action="submit a video-extension generation to Kling")
 
-            task_id = response.json()["data"]["task_id"]
+            task_id = task_id_from_response(response, action="submit a video-extension generation to Kling")
             poll_url = f"{BASE_URL}/{task_id}"
 
             # Polling for completion
@@ -212,15 +230,21 @@ class KlingAI_VideoExtension(ControlNode):
                         return video_artifact
 
                     if status == "failed":
-                        error_msg = result["data"].get("task_status_msg", "Unknown error")
-                        logger.error(f"Kling video extension failed: {error_msg}")
-                        raise RuntimeError(f"Kling video extension failed: {error_msg}")
+                        logger.error(f"Kling video extension failed: {result['data'].get('task_status_msg')}")
+                        raise task_failed_error(
+                            "video extension", result["data"].get("task_status_msg"), task_id=task_id, result=result
+                        )
 
                 except requests.exceptions.RequestException as e:
                     logger.warning(f"Polling request failed (Attempt {attempt + 1}/{max_retries}): {e}")
                     if attempt == max_retries - 1:
-                        raise RuntimeError(f"Failed to get video extension status after multiple retries: {e}") from e
+                        raise error_from_request_exception(
+                            e,
+                            action="check the video extension status",
+                            fields={"task_id": task_id},
+                            attempts=max_retries,
+                        ) from e
 
-            raise RuntimeError("Kling video extension task timed out.")
+            raise task_timeout_error("video extension", task_id=task_id)
 
         yield extend_video

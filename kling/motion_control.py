@@ -4,7 +4,7 @@ from typing import Any
 
 import requests
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact, VideoUrlArtifact
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.core_types import NodeError, Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
@@ -16,6 +16,13 @@ from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from kling_api import raise_for_kling_error
 from kling_auth import get_auth_headers, validate_credentials
+from kling_errors import (
+    error_from_request_exception,
+    task_failed_error,
+    task_id_from_response,
+    task_result_error,
+    task_timeout_error,
+)
 
 BASE_URL = "https://api.klingai.com/v1/videos/motion-control"
 
@@ -33,6 +40,7 @@ class KlingAI_MotionControl(SuccessFailureNode):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
+        self._task_submitted = False
         self._output_file = ProjectFileParameter(node=self, name="output_file", default_filename="kling_video.mp4")
         self._output_file.add_parameter()
         self.category = "AI/Kling"
@@ -147,10 +155,15 @@ class KlingAI_MotionControl(SuccessFailureNode):
 
     def process(self) -> None:
         self._clear_execution_status()
+        self._task_submitted = False
         try:
             self._process()
         except Exception as exc:
-            self._set_safe_defaults()
+            if self._task_submitted:
+                # A task was submitted: keep its ID and the last provider response.
+                self.parameter_output_values["video_url"] = None
+            else:
+                self._set_safe_defaults()
             self._set_status_results(was_successful=False, result_details=str(exc))
             self._handle_failure_exception(exc)
 
@@ -160,35 +173,22 @@ class KlingAI_MotionControl(SuccessFailureNode):
         params = self._get_parameters()
         prompt = params["prompt"]
         if len(prompt) > MAX_PROMPT_LENGTH:
-            self._set_safe_defaults()
-            error_msg = f"{self.name} prompt exceeds {MAX_PROMPT_LENGTH} characters (got: {len(prompt)})."
-            self._set_status_results(was_successful=False, result_details=error_msg)
             logger.error("%s validation failed: prompt too long", self.name)
-            return
+            msg = f"The prompt is {len(prompt)} characters, over the {MAX_PROMPT_LENGTH} limit. Shorten 'Prompt' and run the node again."
+            raise NodeError(msg, fields={"parameter": "prompt"})
 
         if not params["image_url"]:
-            self._set_safe_defaults()
-            error_msg = f"{self.name} requires a reference image."
-            self._set_status_results(was_successful=False, result_details=error_msg)
             logger.error("%s validation failed: missing reference image", self.name)
-            return
+            msg = "Motion Control needs a reference image. Connect an image to 'Reference Image'."
+            raise NodeError(msg, fields={"parameter": "reference_image"})
 
         if not params["video_url"]:
-            self._set_safe_defaults()
-            error_msg = f"{self.name} requires a reference video."
-            self._set_status_results(was_successful=False, result_details=error_msg)
             logger.error("%s validation failed: missing reference video", self.name)
-            return
+            msg = "Motion Control needs a reference video. Connect a video to 'Reference Video'."
+            raise NodeError(msg, fields={"parameter": "reference_video"})
 
         payload = self._build_payload(params)
         task_id = self._submit_request(payload, headers)
-        if not task_id:
-            self._set_safe_defaults()
-            self._set_status_results(
-                was_successful=False,
-                result_details="No task_id returned from API. Cannot proceed with generation.",
-            )
-            return
 
         self._poll_for_result(task_id, headers)
 
@@ -313,17 +313,9 @@ class KlingAI_MotionControl(SuccessFailureNode):
 
         raise_for_kling_error(response, action="submit a motion-control generation to Kling")
 
-        try:
-            response_json = response.json()
-        except ValueError as exc:
-            raise RuntimeError(f"{self.name} received invalid JSON response: {exc}") from exc
-
-        task_id = str(response_json.get("data", {}).get("task_id") or "")
-        if not task_id:
-            logger.error("No task_id returned from POST response: %s", response_json)
-            return ""
-
+        task_id = task_id_from_response(response, action="submit a motion-control generation to Kling")
         self.parameter_output_values["generation_id"] = task_id
+        self._task_submitted = True
         return task_id
 
     def _poll_for_result(self, task_id: str, headers: dict[str, str]) -> None:
@@ -333,8 +325,9 @@ class KlingAI_MotionControl(SuccessFailureNode):
 
         while True:
             if time.monotonic() - start_time > POLL_TIMEOUT_SECONDS:
-                self._handle_polling_timeout()
-                return
+                raise task_timeout_error(
+                    "motion control generation", task_id=task_id, minutes=POLL_TIMEOUT_SECONDS / 60
+                )
 
             time.sleep(POLL_INTERVAL_SECONDS)
             attempt += 1
@@ -343,16 +336,18 @@ class KlingAI_MotionControl(SuccessFailureNode):
                 status_resp = requests.get(poll_url, headers=headers, timeout=30)
                 status_resp.raise_for_status()
             except requests.exceptions.RequestException as exc:
-                self._handle_polling_error(exc)
-                return
+                raise error_from_request_exception(
+                    exc, action="check the motion control status", fields={"task_id": task_id}
+                ) from exc
 
             try:
                 status_json = status_resp.json()
             except ValueError as exc:
-                error_msg = f"Invalid JSON response during polling: {exc}"
-                self._set_status_results(was_successful=False, result_details=error_msg)
-                self._handle_failure_exception(RuntimeError(error_msg))
-                return
+                raise error_from_request_exception(
+                    requests.exceptions.JSONDecodeError(str(exc), status_resp.text, 0),
+                    action="check the motion control status",
+                    fields={"task_id": task_id},
+                ) from exc
 
             self.parameter_output_values["provider_response"] = status_json
             logger.info("%s polling attempt #%d", self.name, attempt)
@@ -362,32 +357,24 @@ class KlingAI_MotionControl(SuccessFailureNode):
                 self._handle_completion(status_json, task_id)
                 return
             if status == "failed":
-                error_msg = status_json.get("data", {}).get("task_status_msg", "Kling motion control failed.")
-                self.parameter_output_values["video_url"] = None
-                self._set_status_results(was_successful=False, result_details=error_msg)
-                return
+                raise task_failed_error(
+                    "motion control generation",
+                    status_json.get("data", {}).get("task_status_msg"),
+                    task_id=task_id,
+                    result=status_json,
+                )
 
     def _handle_completion(self, response_json: dict[str, Any], task_id: str) -> None:
         videos = response_json.get("data", {}).get("task_result", {}).get("videos", [])
         if not videos or not isinstance(videos, list):
-            self.parameter_output_values["video_url"] = None
-            self._set_status_results(
-                was_successful=False,
-                result_details=f"{self.name} generation completed but no videos found in response.",
-            )
-            return
+            raise task_result_error("videos", task_id=task_id, result=response_json)
 
         video_info = videos[0]
         download_url = video_info.get("url")
         video_id = video_info.get("id")
 
         if not download_url:
-            self.parameter_output_values["video_url"] = None
-            self._set_status_results(
-                was_successful=False,
-                result_details=f"{self.name} generation completed but no download URL found in response.",
-            )
-            return
+            raise task_result_error("download URL", task_id=task_id, result=response_json)
 
         if video_id:
             self.parameter_output_values["kling_video_id"] = video_id
@@ -423,24 +410,16 @@ class KlingAI_MotionControl(SuccessFailureNode):
             result_details=f"Video generated successfully and saved as {saved.location}.",
         )
 
-    def _handle_polling_timeout(self) -> None:
-        self.parameter_output_values["video_url"] = None
-        self._set_status_results(
-            was_successful=False,
-            result_details="Video generation timed out after 1200 seconds waiting for result.",
-        )
-
-    def _handle_polling_error(self, exc: Exception) -> None:
-        error_msg = f"Failed to poll generation status: {exc}"
-        self._set_status_results(was_successful=False, result_details=error_msg)
-        self._handle_failure_exception(RuntimeError(error_msg))
-
     def _set_safe_defaults(self) -> None:
         self.parameter_output_values["generation_id"] = ""
         self.parameter_output_values["provider_response"] = None
         self.parameter_output_values["video_url"] = None
         self.parameter_output_values["kling_video_id"] = ""
 
-    def validate_before_workflow_run(self) -> list[Exception] | None:
-        exceptions = validate_credentials()
-        return exceptions if exceptions else None
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Report a missing Kling credential first and on its own, so the Settings link shows immediately."""
+        base_errors = super().validate_before_node_run()
+        credential_errors = validate_credentials()
+        if credential_errors:
+            return list(credential_errors)
+        return base_errors

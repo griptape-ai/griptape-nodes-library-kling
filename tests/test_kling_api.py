@@ -17,13 +17,15 @@ from unittest.mock import patch
 import kling_api
 import pytest
 import requests
-from kling_api import (
+from griptape_nodes.exe_types.core_types import NodeError
+from kling_api import raise_for_kling_error
+from kling_errors import (
     ACCOUNT_BALANCE_CODE,
-    CREDENTIAL_REJECTED_CODE,
     MAX_REPORTED_BODY_CHARS,
     SUCCESS_CODE,
-    raise_for_kling_error,
 )
+
+CREDENTIAL_REJECTED_CODE = 1002
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -68,13 +70,14 @@ def test_a_retired_model_reports_klings_own_explanation() -> None:
     """Kling retires a model per endpoint, and the 404 alone reads as a wrong URL."""
     response = _response(404, {"code": 1203, "message": "The model is discontinued"})
 
-    with pytest.raises(RuntimeError) as error:
+    with pytest.raises(NodeError) as error:
         raise_for_kling_error(response, action=ACTION)
 
-    assert "404" in str(error.value)
-    assert "code 1203" in str(error.value)
     assert "The model is discontinued" in str(error.value)
     assert ACTION in str(error.value)
+    assert error.value.fields == {"status_code": 404, "error_code": 1203}
+    assert error.value.response == {"code": 1203, "message": "The model is discontinued"}
+    assert error.value.links == []
 
 
 @pytest.mark.usefixtures("no_precedence_note")
@@ -82,7 +85,7 @@ def test_an_api_level_failure_under_an_ok_status_still_raises() -> None:
     """Kling reports some failures in the body of a 200, where ``raise_for_status`` sees nothing."""
     response = _response(200, {"code": 1201, "message": "Invalid parameter"})
 
-    with pytest.raises(RuntimeError, match="Invalid parameter"):
+    with pytest.raises(NodeError, match="Invalid parameter"):
         raise_for_kling_error(response, action=ACTION)
 
 
@@ -91,18 +94,19 @@ def test_a_non_json_body_still_reports_the_status() -> None:
     """A gateway in front of Kling answers with HTML, and the error path has to survive it."""
     response = _response(502, text="<html>Bad Gateway</html>")
 
-    with pytest.raises(RuntimeError) as error:
+    with pytest.raises(NodeError) as error:
         raise_for_kling_error(response, action=ACTION)
 
-    assert "502" in str(error.value)
+    assert error.value.fields == {"status_code": 502}
     assert "Bad Gateway" in str(error.value)
+    assert error.value.response == {"text": "<html>Bad Gateway</html>"}
 
 
 @pytest.mark.usefixtures("no_precedence_note")
 def test_an_empty_body_says_so_rather_than_reporting_nothing() -> None:
     response = _response(500)
 
-    with pytest.raises(RuntimeError, match="no response body"):
+    with pytest.raises(NodeError, match="no response body"):
         raise_for_kling_error(response, action=ACTION)
 
 
@@ -111,7 +115,7 @@ def test_a_long_body_is_truncated() -> None:
     """An HTML error page would otherwise bury the status code it was quoted to explain."""
     response = _response(502, text="x" * (MAX_REPORTED_BODY_CHARS * 3))
 
-    with pytest.raises(RuntimeError) as error:
+    with pytest.raises(NodeError) as error:
         raise_for_kling_error(response, action=ACTION)
 
     assert len(str(error.value)) < MAX_REPORTED_BODY_CHARS * 2
@@ -123,7 +127,7 @@ def test_a_credential_failure_explains_which_mechanism_won(code: int) -> None:
     response = _response(401, {"code": code, "message": "api key not found"})
 
     with patch.object(kling_api, "credential_precedence_note", return_value=PRECEDENCE_NOTE):
-        with pytest.raises(RuntimeError) as error:
+        with pytest.raises(NodeError) as error:
             raise_for_kling_error(response, action=ACTION)
 
     assert PRECEDENCE_NOTE in str(error.value)
@@ -134,7 +138,38 @@ def test_an_unrelated_failure_does_not_blame_the_credentials() -> None:
     response = _response(404, {"code": 1203, "message": "The model is discontinued"})
 
     with patch.object(kling_api, "credential_precedence_note", return_value=PRECEDENCE_NOTE):
-        with pytest.raises(RuntimeError) as error:
+        with pytest.raises(NodeError) as error:
             raise_for_kling_error(response, action=ACTION)
 
     assert PRECEDENCE_NOTE not in str(error.value)
+
+
+def test_a_refused_credential_links_to_settings_and_keeps_the_ids() -> None:
+    """The live API answers a bad token with 401, code 1002 and a request ID."""
+    response = _response(
+        401, {"code": 1002, "message": "The token was expected to have 3 parts, but got 0.", "request_id": "req-1"}
+    )
+
+    with patch.object(kling_api, "credential_precedence_note", return_value=None):
+        with pytest.raises(NodeError) as error:
+            raise_for_kling_error(response, action=ACTION)
+
+    assert str(error.value).startswith("Kling refused the credentials: The token was expected")
+    assert error.value.fields == {"status_code": 401, "error_code": 1002, "request_id": "req-1"}
+    assert [link.url for link in error.value.links][0] == "#settings-secrets?filter=KLING"
+    assert error.value.response == {
+        "code": 1002,
+        "message": "The token was expected to have 3 parts, but got 0.",
+        "request_id": "req-1",
+    }
+
+
+def test_the_message_does_not_repeat_the_status_or_ids() -> None:
+    response = _response(500, {"code": 5000, "message": "Internal error", "request_id": "req-9"})
+
+    with patch.object(kling_api, "credential_precedence_note", return_value=None):
+        with pytest.raises(NodeError) as error:
+            raise_for_kling_error(response, action=ACTION)
+
+    assert "500" not in str(error.value)
+    assert "req-9" not in str(error.value)

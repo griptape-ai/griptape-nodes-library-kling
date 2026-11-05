@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact, VideoUrlArtifact
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.core_types import NodeError, Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
@@ -15,6 +15,14 @@ from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
 from kling_api import raise_for_kling_error
 from kling_auth import get_auth_headers, validate_credentials
+from kling_errors import (
+    error_from_request_exception,
+    task_failed_error,
+    task_id_from_response,
+    task_result_error,
+    task_timeout_error,
+    validation_errors_to_raise,
+)
 from kling_models import (
     DEFAULT_IMAGE_TO_VIDEO_MODEL,
     IMAGE_TO_VIDEO_MODELS,
@@ -345,8 +353,16 @@ class KlingAI_ImageToVideo(ControlNode):
         image_input = self.get_parameter_value(param_name)
         return self._get_image_api_data_from_input(image_input)
 
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Report a missing Kling credential first and on its own, so the Settings link shows immediately."""
+        base_errors = super().validate_before_node_run()
+        credential_errors = validate_credentials()
+        if credential_errors:
+            return list(credential_errors)
+        return base_errors
+
     def validate_node(self) -> list[Exception] | None:
-        errors = validate_credentials()
+        errors: list[Exception] = []
 
         # Validate images (at least one of image or image_tail must be provided)
         image_val = self._get_image_api_data("image")
@@ -365,35 +381,35 @@ class KlingAI_ImageToVideo(ControlNode):
         # Only validate if somehow invalid combinations slip through UI
         if model == "kling-v2-5-turbo":
             if mode != "pro":
-                errors.append(ValueError("kling-v2-5-turbo only supports pro mode"))
+                errors.append(NodeError("kling-v2-5-turbo only supports pro mode"))
             if duration not in [5, 10]:
-                errors.append(ValueError("kling-v2-5-turbo only supports durations 5 or 10 seconds"))
+                errors.append(NodeError("kling-v2-5-turbo only supports durations 5 or 10 seconds"))
         if model == "kling-v2-6":
             if mode != "pro":
-                errors.append(ValueError("kling-v2-6 only supports pro mode"))
+                errors.append(NodeError("kling-v2-6 only supports pro mode"))
             if duration not in [5, 10]:
-                errors.append(ValueError("kling-v2-6 only supports durations 5 or 10 seconds"))
+                errors.append(NodeError("kling-v2-6 only supports durations 5 or 10 seconds"))
 
         # kling-v3 constraints: duration 3-15s
         if model == "kling-v3":
             if not (3 <= duration <= 15):
-                errors.append(ValueError("kling-v3 only supports durations from 3 to 15 seconds"))
+                errors.append(NodeError("kling-v3 only supports durations from 3 to 15 seconds"))
 
         cfg_scale_val = self.get_parameter_value("cfg_scale")
         if not (0 <= cfg_scale_val <= 1):  # type: ignore[operator]
-            errors.append(ValueError("cfg_scale must be between 0.0 and 1.0."))
+            errors.append(NodeError("cfg_scale must be between 0.0 and 1.0."))
 
         dynamic_masks_val_str = self.get_parameter_value("dynamic_masks")
         if dynamic_masks_val_str and dynamic_masks_val_str.strip():
             try:
                 json.loads(dynamic_masks_val_str)
             except json.JSONDecodeError:
-                errors.append(ValueError("Dynamic Masks 'dynamic_masks' is not a valid JSON string."))
+                errors.append(NodeError("Dynamic Masks 'dynamic_masks' is not a valid JSON string."))
 
         # Enforce end-frame support rules per docs
         image_tail_val = self._get_image_api_data("image_tail")
         if not image_val and not image_tail_val:
-            errors.append(ValueError("At least one of 'image' or 'image_tail' must be provided."))
+            errors.append(NodeError("At least one of 'image' or 'image_tail' must be provided."))
         if image_tail_val:
             end_frame_supported = (
                 (model == "kling-v2-5-turbo" and mode == "pro" and duration in [5, 10])
@@ -402,7 +418,7 @@ class KlingAI_ImageToVideo(ControlNode):
             )
             if not end_frame_supported:
                 errors.append(
-                    ValueError(
+                    NodeError(
                         "image_tail is only supported on models kling-v2-5-turbo and kling-v2-6 (with mode=pro and duration 5 or 10), and kling-v3."
                     )
                 )
@@ -414,11 +430,13 @@ class KlingAI_ImageToVideo(ControlNode):
 
     def _process(self):
         # Validate before processing
+        credential_errors = validate_credentials()
+        if credential_errors:
+            raise credential_errors[0]
+
         validation_errors = self.validate_node()
         if validation_errors:
-            # Concatenate error messages for a single exception
-            error_message = "; ".join(str(e) for e in validation_errors)
-            raise ValueError(f"Validation failed: {error_message}")
+            raise validation_errors_to_raise(validation_errors)
 
         # Precompute payload inputs once to avoid repeated conversions in parallel jobs.
         model_name = self.get_parameter_value("model_name")
@@ -442,7 +460,7 @@ class KlingAI_ImageToVideo(ControlNode):
             try:
                 dynamic_masks_payload = json.loads(dynamic_masks_str)
             except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid JSON in dynamic_masks: {e}") from e
+                raise NodeError(f"'Dynamic Masks' is not valid JSON: {e}", fields={"parameter": "dynamic_masks"}) from e
 
         logger.info(
             f"DEBUG: Parameter values - model_name: {model_name}, duration: {duration}, cfg_scale: {cfg_scale}, mode: {mode}"
@@ -505,7 +523,7 @@ class KlingAI_ImageToVideo(ControlNode):
             logger.info(f"Initial response text: {response.text}")
             raise_for_kling_error(response, action="submit an image-to-video generation to Kling")
 
-            task_id = response.json()["data"]["task_id"]
+            task_id = task_id_from_response(response, action="submit an image-to-video generation to Kling")
 
             poll_url = f"{BASE_URL}/{task_id}"  # Assuming polling uses the same base and task_id pattern
             video_url = None
@@ -541,24 +559,30 @@ class KlingAI_ImageToVideo(ControlNode):
                         except (KeyError, IndexError, TypeError) as e:
                             logger.error(f"Failed to extract video URL from response: {e}")
                             logger.error(f"Response structure: {json.dumps(result, indent=2)}")
-                            raise RuntimeError(f"Failed to extract video URL from API response: {e}") from e
+                            raise task_result_error("video URL", task_id=task_id, result=result) from e
                         break
                     if status == "failed":
-                        error_msg = result["data"].get("task_status_msg", "Unknown error")
-                        logger.error(f"Kling video generation failed: {error_msg}")
-                        raise RuntimeError(f"Kling video generation failed: {error_msg}")
+                        logger.error(f"Kling video generation failed: {result['data'].get('task_status_msg')}")
+                        raise task_failed_error(
+                            "video generation", result["data"].get("task_status_msg"), task_id=task_id, result=result
+                        )
                     # Other statuses like 'processing', 'pending' mean continue polling
 
                 except requests.exceptions.RequestException as e:
                     logger.warning(f"Polling request failed (Attempt {attempt + 1}/{max_retries}): {e}")
                     if attempt == max_retries - 1:
-                        raise RuntimeError(f"Failed to get video status after multiple retries: {e}") from e
+                        raise error_from_request_exception(
+                            e,
+                            action="check the video generation status",
+                            fields={"task_id": task_id},
+                            attempts=max_retries,
+                        ) from e
 
             if not video_url:
                 logger.error(
                     f"Polling completed but no video URL found. Final status may not have been 'succeed'. Task ID: {task_id}"
                 )
-                raise RuntimeError("Kling video generation task finished but no video URL was found or task timed out.")
+                raise task_timeout_error("video generation", task_id=task_id)
 
             # Download the generated video and save to project storage
             video_bytes = File(video_url).read_bytes()
@@ -604,7 +628,7 @@ class KlingAI_ImageToVideo(ControlNode):
                         first_video_artifact = result_artifact
 
         if first_video_artifact is None:
-            raise RuntimeError("No videos were generated.")
+            raise NodeError("Kling returned no videos.")
 
         self.publish_update_to_parameter("video_url", first_video_artifact)
         for index in range(5):

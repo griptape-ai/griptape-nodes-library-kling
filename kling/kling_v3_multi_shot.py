@@ -5,7 +5,7 @@ from typing import Any
 
 import requests
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact, VideoUrlArtifact
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.core_types import NodeError, Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
@@ -15,6 +15,13 @@ from griptape_nodes.traits.slider import Slider
 from griptape_nodes.traits.widget import Widget
 from kling_api import raise_for_kling_error
 from kling_auth import get_auth_headers, validate_credentials
+from kling_errors import (
+    error_from_request_exception,
+    task_failed_error,
+    task_id_from_response,
+    task_timeout_error,
+    validation_errors_to_raise,
+)
 
 IMAGE2VIDEO_URL = "https://api.klingai.com/v1/videos/image2video"
 TEXT2VIDEO_URL = "https://api.klingai.com/v1/videos/text2video"
@@ -190,26 +197,34 @@ class KlingV3MultiShot(ControlNode):
 
         return url_string
 
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Report a missing Kling credential first and on its own, so the Settings link shows immediately."""
+        base_errors = super().validate_before_node_run()
+        credential_errors = validate_credentials()
+        if credential_errors:
+            return list(credential_errors)
+        return base_errors
+
     def validate_node(self) -> list[Exception] | None:
-        errors = validate_credentials()
+        errors: list[Exception] = []
 
         shots = self.parameter_values.get("shots", self.DEFAULT_SHOTS)
         if not shots:
-            errors.append(ValueError("At least one shot is required."))
+            errors.append(NodeError("At least one shot is required."))
         else:
             total_duration = sum(shot.get("duration", 1) for shot in shots)
             if total_duration < 3:
-                errors.append(ValueError(f"Total duration must be at least 3 seconds (currently {total_duration}s)."))
+                errors.append(NodeError(f"Total duration must be at least 3 seconds (currently {total_duration}s)."))
             if total_duration > 15:
-                errors.append(ValueError(f"Total duration cannot exceed 15 seconds (currently {total_duration}s)."))
+                errors.append(NodeError(f"Total duration cannot exceed 15 seconds (currently {total_duration}s)."))
 
             has_any_description = any(shot.get("description", "").strip() for shot in shots)
             if not has_any_description:
-                errors.append(ValueError("At least one shot must have a description."))
+                errors.append(NodeError("At least one shot must have a description."))
 
         cfg_scale = self.parameter_values.get("cfg_scale", 0.5)
         if not (0 <= cfg_scale <= 1):
-            errors.append(ValueError("cfg_scale must be between 0.0 and 1.0."))
+            errors.append(NodeError("cfg_scale must be between 0.0 and 1.0."))
 
         return errors if errors else None
 
@@ -217,10 +232,13 @@ class KlingV3MultiShot(ControlNode):
         yield lambda: self._process()
 
     def _process(self):
+        credential_errors = validate_credentials()
+        if credential_errors:
+            raise credential_errors[0]
+
         validation_errors = self.validate_node()
         if validation_errors:
-            error_message = "; ".join(str(e) for e in validation_errors)
-            raise ValueError(f"Validation failed: {error_message}")
+            raise validation_errors_to_raise(validation_errors)
 
         headers = get_auth_headers()
 
@@ -297,7 +315,7 @@ class KlingV3MultiShot(ControlNode):
 
         raise_for_kling_error(response, action="submit a multi-shot generation to Kling")
 
-        task_id = response.json()["data"]["task_id"]
+        task_id = task_id_from_response(response, action="submit a multi-shot generation to Kling")
         logger.info(f"Task created with ID: {task_id}")
 
         # Poll for completion
@@ -325,16 +343,22 @@ class KlingV3MultiShot(ControlNode):
                     logger.info(f"Video generation succeeded. URL: {video_url}")
                     break
                 if status == "failed":
-                    error_msg = result["data"].get("task_status_msg", "Unknown error")
-                    raise RuntimeError(f"Kling multi-shot generation failed: {error_msg}")
+                    raise task_failed_error(
+                        "multi-shot generation", result["data"].get("task_status_msg"), task_id=task_id, result=result
+                    )
 
             except requests.exceptions.RequestException as e:
                 logger.warning(f"Polling request failed (attempt {attempt + 1}/{max_retries}): {e}")
                 if attempt == max_retries - 1:
-                    raise RuntimeError(f"Failed to get video status after {max_retries} attempts: {e}") from e
+                    raise error_from_request_exception(
+                        e,
+                        action="check the multi-shot generation status",
+                        fields={"task_id": task_id},
+                        attempts=max_retries,
+                    ) from e
 
         if not video_url:
-            raise RuntimeError("Video generation timed out — no video URL received.")
+            raise task_timeout_error("multi-shot generation", task_id=task_id)
 
         # Download and save to project storage
         try:
@@ -342,7 +366,9 @@ class KlingV3MultiShot(ControlNode):
             download_response.raise_for_status()
             video_bytes = download_response.content
         except requests.exceptions.RequestException as e:
-            raise RuntimeError(f"Failed to download generated video: {e}") from e
+            raise error_from_request_exception(
+                e, action="download the generated video", fields={"task_id": task_id}
+            ) from e
 
         dest = self._output_file.build_file()
         saved = dest.write_bytes(video_bytes)
