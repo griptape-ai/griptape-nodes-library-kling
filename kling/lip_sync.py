@@ -11,7 +11,14 @@ from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes.traits.options import Options
 from kling_api import raise_for_kling_error
-from kling_auth import get_auth_headers, validate_credentials
+from kling_auth import KlingCredentialCheck, get_auth_headers
+from kling_errors import (
+    error_from_exception,
+    task_failed_error,
+    task_id_from_response,
+    task_timeout_error,
+    validation_errors_to_raise,
+)
 from kling_models import LIP_SYNC_MODELS
 
 BASE_URL = "https://api-singapore.klingai.com/v1/videos/lip-sync"
@@ -26,7 +33,7 @@ class VideoUrlArtifact(UrlArtifact):
         super().__init__(value=url, name=name or self.__class__.__name__)
 
 
-class KlingAI_LipSync(ControlNode):
+class KlingAI_LipSync(KlingCredentialCheck, ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._output_file = ProjectFileParameter(node=self, name="output_file", default_filename="kling_video.mp4")
@@ -303,8 +310,8 @@ class KlingAI_LipSync(ControlNode):
         )
 
     def validate_node(self) -> list[Exception] | None:
-        """Validates that the Kling API keys are configured and parameters are valid."""
-        errors = validate_credentials()
+        """Validates the parameters."""
+        errors: list[Exception] = []
 
         # Check required video input based on type
         video_input_type = self.get_parameter_value("video_input_type")
@@ -400,8 +407,7 @@ class KlingAI_LipSync(ControlNode):
         # Validate before processing
         validation_errors = self.validate_node()
         if validation_errors:
-            error_message = "; ".join(str(e) for e in validation_errors)
-            raise ValueError(f"Validation failed: {error_message}")
+            raise validation_errors_to_raise(validation_errors)
 
         def create_lip_sync() -> VideoUrlArtifact:
             headers = get_auth_headers()
@@ -507,11 +513,9 @@ class KlingAI_LipSync(ControlNode):
             except:
                 logger.info(f"Kling API Response Text: {response.text}")
 
-            raise_for_kling_error(response, action="submit a lip-sync generation to Kling")
+            raise_for_kling_error(response)
 
-            if not response_json:
-                response_json = response.json()  # Try again after raise_for_kling_error
-            task_id = response_json["data"]["task_id"]
+            task_id = task_id_from_response(response)
 
             poll_url = f"{BASE_URL}/{task_id}"
 
@@ -551,23 +555,14 @@ class KlingAI_LipSync(ControlNode):
                         return video_artifact
 
                     if status == "failed":
-                        error_msg = result["data"].get("task_status_msg", "Unknown error")
-                        logger.error(f"Kling lip-sync failed: {error_msg}")
-
-                        # Publish error message to output instead of crashing the node
-                        error_artifact = VideoUrlArtifact(url="")
-                        error_artifact.name = f"Lip-sync failed: {error_msg}"
-                        self.publish_update_to_parameter("lip_sync_video_url", error_artifact)
-                        self.publish_update_to_parameter("task_id", f"FAILED: {error_msg}")
-
-                        logger.info(f"Lip-sync task failed gracefully with message: {error_msg}")
-                        return error_artifact
+                        logger.error(f"Kling lip-sync failed: {result['data'].get('task_status_msg')}")
+                        raise task_failed_error("lip-sync", result, task_id=task_id)
 
                 except requests.exceptions.RequestException as e:
                     logger.warning(f"Polling request failed (Attempt {attempt + 1}/{max_retries}): {e}")
                     if attempt == max_retries - 1:
-                        raise RuntimeError(f"Failed to get lip-sync status after multiple retries: {e}") from e
+                        raise error_from_exception(e, fields={"task_id": task_id}) from e
 
-            raise RuntimeError("Kling lip-sync task timed out.")
+            raise task_timeout_error("lip-sync", task_id=task_id)
 
         return create_lip_sync()

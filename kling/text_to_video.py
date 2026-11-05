@@ -12,7 +12,13 @@ from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
 from kling_api import raise_for_kling_error
-from kling_auth import get_auth_headers, validate_credentials
+from kling_auth import KlingCredentialCheck, get_auth_headers
+from kling_errors import (
+    error_from_exception,
+    task_failed_error,
+    task_id_from_response,
+    task_timeout_error,
+)
 from kling_models import (
     DEFAULT_TEXT_TO_VIDEO_MODEL,
     RETIRED_TEXT_TO_VIDEO_MODELS,
@@ -23,7 +29,7 @@ from kling_models import (
 BASE_URL = "https://api-singapore.klingai.com/v1/videos/text2video"
 
 
-class KlingAI_TextToVideo(ControlNode):
+class KlingAI_TextToVideo(KlingCredentialCheck, ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._output_file = ProjectFileParameter(node=self, name="output_file", default_filename="kling_video.mp4")
@@ -257,11 +263,11 @@ class KlingAI_TextToVideo(ControlNode):
         )
 
     def validate_node(self) -> list[Exception] | None:
-        """Validates that the Kling API keys are configured and model constraints.
+        """Validates the model constraints.
         Returns:
             list[Exception] | None: List of exceptions if validation fails, None if validation passes.
         """
-        errors = validate_credentials()
+        errors: list[Exception] = []
 
         # Negative prompt length validation
         negative_prompt = self.get_parameter_value("negative_prompt")
@@ -395,15 +401,9 @@ class KlingAI_TextToVideo(ControlNode):
             logger.info(f"Initial response headers: {dict(response.headers)}")
             logger.info(f"Initial response text: {response.text[:500]}...")  # First 500 chars
 
-            try:
-                raise_for_kling_error(response, action="submit a text-to-video generation to Kling")
-                response_data = response.json()
-                task_id = response_data["data"]["task_id"]
-                logger.info(f"Task created with ID: {task_id}")
-            except requests.exceptions.JSONDecodeError as e:
-                logger.error(f"Failed to parse JSON from initial response. Status: {response.status_code}")
-                logger.error(f"Response text: {response.text}")
-                raise RuntimeError(f"Invalid JSON response from Kling API: {e}") from e
+            raise_for_kling_error(response)
+            task_id = task_id_from_response(response)
+            logger.info(f"Task created with ID: {task_id}")
 
             poll_url = f"{BASE_URL}/{task_id}"
             video_url = None
@@ -443,9 +443,7 @@ class KlingAI_TextToVideo(ControlNode):
                             logger.info(f"Retrying in 5 seconds... (attempt {retry_count}/{max_retries})")
                             continue
                         else:
-                            raise RuntimeError(
-                                f"Invalid JSON response from Kling API after {max_retries} attempts: {e}"
-                            ) from e
+                            raise error_from_exception(e, fields={"task_id": task_id}) from e
 
                     status = result["data"]["task_status"]
                     logger.info(f"Video generation status: {status}")
@@ -457,22 +455,19 @@ class KlingAI_TextToVideo(ControlNode):
                         ]  # Extract the correct video ID
                         break
                     if status == "failed":
-                        error_msg = f"Video generation failed: {result['data']['task_status_msg']}"
-                        logger.error(error_msg)
-                        raise RuntimeError(error_msg)
+                        logger.error(f"Video generation failed: {result['data'].get('task_status_msg')}")
+                        raise task_failed_error("video generation", result, task_id=task_id)
                     # Continue polling for "submitted", "processing", etc.
 
                 except requests.exceptions.RequestException as e:
                     logger.warning(f"Request failed (attempt {retry_count}/{max_retries}): {e}")
                     if retry_count >= max_retries:
-                        raise RuntimeError(f"Failed to poll task status after {max_retries} attempts: {e}") from e
+                        raise error_from_exception(e, fields={"task_id": task_id}) from e
                     logger.info("Retrying in 5 seconds...")
                     continue
 
             if not video_url:
-                raise RuntimeError(
-                    f"Video generation timed out after {max_retries * 5 / 60:.1f} minutes. Task may still be processing."
-                )
+                raise task_timeout_error("video generation", task_id=task_id)
 
             # Download the generated video and save to project storage
             video_bytes = File(video_url).read_bytes()

@@ -14,7 +14,15 @@ from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
 from kling_api import raise_for_kling_error
-from kling_auth import get_auth_headers, validate_credentials
+from kling_auth import KlingCredentialCheck, get_auth_headers
+from kling_errors import (
+    error_from_exception,
+    task_failed_error,
+    task_id_from_response,
+    task_result_error,
+    task_timeout_error,
+    validation_errors_to_raise,
+)
 from kling_models import (
     DEFAULT_IMAGE_TO_VIDEO_MODEL,
     IMAGE_TO_VIDEO_MODELS,
@@ -25,7 +33,7 @@ from kling_models import (
 BASE_URL = "https://api.klingai.com/v1/videos/image2video"  # Global endpoint per latest docs
 
 
-class KlingAI_ImageToVideo(ControlNode):
+class KlingAI_ImageToVideo(KlingCredentialCheck, ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._output_file = ProjectFileParameter(node=self, name="output_file", default_filename="kling_video.mp4")
@@ -346,7 +354,7 @@ class KlingAI_ImageToVideo(ControlNode):
         return self._get_image_api_data_from_input(image_input)
 
     def validate_node(self) -> list[Exception] | None:
-        errors = validate_credentials()
+        errors: list[Exception] = []
 
         # Validate images (at least one of image or image_tail must be provided)
         image_val = self._get_image_api_data("image")
@@ -416,9 +424,7 @@ class KlingAI_ImageToVideo(ControlNode):
         # Validate before processing
         validation_errors = self.validate_node()
         if validation_errors:
-            # Concatenate error messages for a single exception
-            error_message = "; ".join(str(e) for e in validation_errors)
-            raise ValueError(f"Validation failed: {error_message}")
+            raise validation_errors_to_raise(validation_errors)
 
         # Precompute payload inputs once to avoid repeated conversions in parallel jobs.
         model_name = self.get_parameter_value("model_name")
@@ -503,9 +509,9 @@ class KlingAI_ImageToVideo(ControlNode):
             logger.info(f"Initial response status: {response.status_code}")
             logger.info(f"Initial response headers: {dict(response.headers)}")
             logger.info(f"Initial response text: {response.text}")
-            raise_for_kling_error(response, action="submit an image-to-video generation to Kling")
+            raise_for_kling_error(response)
 
-            task_id = response.json()["data"]["task_id"]
+            task_id = task_id_from_response(response)
 
             poll_url = f"{BASE_URL}/{task_id}"  # Assuming polling uses the same base and task_id pattern
             video_url = None
@@ -541,24 +547,23 @@ class KlingAI_ImageToVideo(ControlNode):
                         except (KeyError, IndexError, TypeError) as e:
                             logger.error(f"Failed to extract video URL from response: {e}")
                             logger.error(f"Response structure: {json.dumps(result, indent=2)}")
-                            raise RuntimeError(f"Failed to extract video URL from API response: {e}") from e
+                            raise task_result_error("video URL", task_id=task_id, result=result) from e
                         break
                     if status == "failed":
-                        error_msg = result["data"].get("task_status_msg", "Unknown error")
-                        logger.error(f"Kling video generation failed: {error_msg}")
-                        raise RuntimeError(f"Kling video generation failed: {error_msg}")
+                        logger.error(f"Kling video generation failed: {result['data'].get('task_status_msg')}")
+                        raise task_failed_error("video generation", result, task_id=task_id)
                     # Other statuses like 'processing', 'pending' mean continue polling
 
                 except requests.exceptions.RequestException as e:
                     logger.warning(f"Polling request failed (Attempt {attempt + 1}/{max_retries}): {e}")
                     if attempt == max_retries - 1:
-                        raise RuntimeError(f"Failed to get video status after multiple retries: {e}") from e
+                        raise error_from_exception(e, fields={"task_id": task_id}) from e
 
             if not video_url:
                 logger.error(
                     f"Polling completed but no video URL found. Final status may not have been 'succeed'. Task ID: {task_id}"
                 )
-                raise RuntimeError("Kling video generation task finished but no video URL was found or task timed out.")
+                raise task_timeout_error("video generation", task_id=task_id)
 
             # Download the generated video and save to project storage
             video_bytes = File(video_url).read_bytes()

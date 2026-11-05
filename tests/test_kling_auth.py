@@ -15,6 +15,7 @@ from unittest.mock import patch
 import jwt
 import kling_auth
 import pytest
+from griptape_nodes.exe_types.core_types import NodeError
 from kling_auth import (
     ACCESS_KEY_ENV_VAR,
     API_KEY_ENV_VAR,
@@ -113,28 +114,28 @@ def test_headers_carry_the_token_as_a_bearer(secrets: Callable[..., None]) -> No
 def test_no_credentials_raises_before_any_request(secrets: Callable[..., None]) -> None:
     secrets({})
 
-    with pytest.raises(ValueError, match=API_KEY_ENV_VAR):
+    with pytest.raises(NodeError, match=API_KEY_ENV_VAR):
         get_auth_headers()
 
 
 def test_all_credentials_empty_raises(secrets: Callable[..., None]) -> None:
     secrets({API_KEY_ENV_VAR: "", ACCESS_KEY_ENV_VAR: "", SECRET_KEY_ENV_VAR: ""})
 
-    with pytest.raises(ValueError, match=API_KEY_ENV_VAR):
+    with pytest.raises(NodeError, match=API_KEY_ENV_VAR):
         get_auth_headers()
 
 
 def test_half_a_pair_names_the_missing_half(secrets: Callable[..., None]) -> None:
     secrets({ACCESS_KEY_ENV_VAR: ACCESS_KEY})
 
-    with pytest.raises(ValueError, match=f"{SECRET_KEY_ENV_VAR} is empty"):
+    with pytest.raises(NodeError, match=f"{SECRET_KEY_ENV_VAR} is empty"):
         get_auth_token()
 
 
 def test_the_other_half_of_a_pair_names_the_missing_half(secrets: Callable[..., None]) -> None:
     secrets({SECRET_KEY_ENV_VAR: SECRET_KEY})
 
-    with pytest.raises(ValueError, match=f"{ACCESS_KEY_ENV_VAR} is empty"):
+    with pytest.raises(NodeError, match=f"{ACCESS_KEY_ENV_VAR} is empty"):
         get_auth_token()
 
 
@@ -165,7 +166,8 @@ def test_validation_reports_incomplete_credentials(secrets: Callable[..., None],
     errors = validate_credentials()
 
     assert len(errors) == 1
-    assert isinstance(errors[0], ValueError)
+    assert isinstance(errors[0], NodeError)
+    assert errors[0].links[0].url.startswith("#settings-secrets?filter=KLING_")
 
 
 def test_the_precedence_note_names_the_mechanism_that_won(secrets: Callable[..., None]) -> None:

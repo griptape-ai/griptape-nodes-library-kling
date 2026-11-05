@@ -10,9 +10,11 @@ to clear the pair first.
 import time
 
 import jwt
+from griptape_nodes.exe_types.core_types import NodeError, NodeErrorLink
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 SERVICE = "Kling"
+KLING_KEYS_URL = "https://app.klingai.com/global/dev/api-key"
 API_KEY_ENV_VAR = "KLING_API_KEY"
 ACCESS_KEY_ENV_VAR = "KLING_ACCESS_KEY"
 SECRET_KEY_ENV_VAR = "KLING_SECRET_KEY"  # noqa: S105
@@ -37,11 +39,11 @@ def get_auth_token() -> str:
     """Return the bearer token for the configured credentials.
 
     Raises:
-        ValueError: If neither credential mechanism is completely configured.
+        NodeError: If neither credential mechanism is completely configured.
     """
     token = _resolve_auth_token()
     if token is None:
-        raise ValueError(_credentials_error_message())
+        raise _credentials_error()
     return token
 
 
@@ -49,16 +51,29 @@ def get_auth_headers() -> dict[str, str]:
     """Return the headers for a JSON request to the Kling API.
 
     Raises:
-        ValueError: If neither credential mechanism is completely configured.
+        NodeError: If neither credential mechanism is completely configured.
     """
     return {"Content-Type": "application/json", "Authorization": f"Bearer {get_auth_token()}"}
 
 
-def validate_credentials() -> list[Exception]:
+def validate_credentials() -> list[NodeError]:
     """Return validation errors when no credential mechanism is completely configured."""
     if _resolve_auth_token() is None:
-        return [ValueError(_credentials_error_message())]
+        return [_credentials_error()]
     return []
+
+
+class KlingCredentialCheck:
+    """Mixin for a node class: report a missing credential first and on its own before the node runs."""
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        base_errors = super().validate_before_node_run()
+        return list(validate_credentials()) or base_errors
+
+
+def using_api_key() -> bool:
+    """True when the token comes from KLING_API_KEY rather than the Access Key / Secret Key pair."""
+    return bool(_get_secret(API_KEY_ENV_VAR))
 
 
 def credential_precedence_note() -> str | None:
@@ -106,22 +121,19 @@ def _resolve_auth_token() -> str | None:
     return None
 
 
-def _credentials_error_message() -> str:
-    """Describe what to set, naming the half of a pair that is missing."""
+def _credentials_error() -> NodeError:
+    """Name the half of a pair that is missing, or link to the key page when nothing is set."""
     access_key = _get_secret(ACCESS_KEY_ENV_VAR)
     secret_key = _get_secret(SECRET_KEY_ENV_VAR)
 
     if access_key and not secret_key:
-        return (
-            f"Kling {ACCESS_KEY_ENV_VAR} is set but {SECRET_KEY_ENV_VAR} is empty. "
-            f"Set {SECRET_KEY_ENV_VAR}, or set {API_KEY_ENV_VAR} to a Kling API key instead."
-        )
-    if secret_key and not access_key:
-        return (
-            f"Kling {SECRET_KEY_ENV_VAR} is set but {ACCESS_KEY_ENV_VAR} is empty. "
-            f"Set {ACCESS_KEY_ENV_VAR}, or set {API_KEY_ENV_VAR} to a Kling API key instead."
-        )
-    return (
-        f"Kling credentials not found. Set {API_KEY_ENV_VAR} to your Kling API key, or set both "
-        f"{ACCESS_KEY_ENV_VAR} and {SECRET_KEY_ENV_VAR} if you use an Access Key / Secret Key pair."
+        missing = SECRET_KEY_ENV_VAR
+    elif secret_key and not access_key:
+        missing = ACCESS_KEY_ENV_VAR
+    else:
+        return NodeError.from_missing_secret(API_KEY_ENV_VAR, key_url=KLING_KEYS_URL)
+    return NodeError(
+        f"{missing} is empty. Set it in Settings → API Keys & Secrets, or set {API_KEY_ENV_VAR} to a Kling API key "
+        "instead, then run the node again.",
+        links=[NodeErrorLink.from_secret(missing)],
     )

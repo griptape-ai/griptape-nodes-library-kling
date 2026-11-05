@@ -9,7 +9,14 @@ from griptape_nodes.exe_types.param_components.project_file_parameter import Pro
 from griptape_nodes.files.file import File
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from kling_api import raise_for_kling_error
-from kling_auth import get_auth_headers, validate_credentials
+from kling_auth import KlingCredentialCheck, get_auth_headers
+from kling_errors import (
+    error_from_exception,
+    task_failed_error,
+    task_id_from_response,
+    task_timeout_error,
+    validation_errors_to_raise,
+)
 
 BASE_URL = "https://api-singapore.klingai.com/v1/videos/video-extend"
 
@@ -23,7 +30,7 @@ class VideoUrlArtifact(UrlArtifact):
         super().__init__(value=url, name=name or self.__class__.__name__)
 
 
-class KlingAI_VideoExtension(ControlNode):
+class KlingAI_VideoExtension(KlingCredentialCheck, ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._output_file = ProjectFileParameter(node=self, name="output_file", default_filename="kling_video.mp4")
@@ -116,8 +123,8 @@ class KlingAI_VideoExtension(ControlNode):
         )
 
     def validate_node(self) -> list[Exception] | None:
-        """Validates that the Kling API keys are configured and parameters are valid."""
-        errors = validate_credentials()
+        """Validates the parameters."""
+        errors: list[Exception] = []
 
         # Check required video_id
         video_id = self.get_parameter_value("video_id")
@@ -135,8 +142,7 @@ class KlingAI_VideoExtension(ControlNode):
         # Validate before yielding
         validation_errors = self.validate_node()
         if validation_errors:
-            error_message = "; ".join(str(e) for e in validation_errors)
-            raise ValueError(f"Validation failed: {error_message}")
+            raise validation_errors_to_raise(validation_errors)
 
         def extend_video() -> VideoUrlArtifact:
             headers = get_auth_headers()
@@ -170,9 +176,9 @@ class KlingAI_VideoExtension(ControlNode):
                     logger.error(f"Kling Video Extension error body: {json.dumps(response.json(), indent=2)}")
                 except Exception:
                     logger.error(f"Kling Video Extension error text: {response.text}")
-            raise_for_kling_error(response, action="submit a video-extension generation to Kling")
+            raise_for_kling_error(response)
 
-            task_id = response.json()["data"]["task_id"]
+            task_id = task_id_from_response(response)
             poll_url = f"{BASE_URL}/{task_id}"
 
             # Polling for completion
@@ -212,15 +218,14 @@ class KlingAI_VideoExtension(ControlNode):
                         return video_artifact
 
                     if status == "failed":
-                        error_msg = result["data"].get("task_status_msg", "Unknown error")
-                        logger.error(f"Kling video extension failed: {error_msg}")
-                        raise RuntimeError(f"Kling video extension failed: {error_msg}")
+                        logger.error(f"Kling video extension failed: {result['data'].get('task_status_msg')}")
+                        raise task_failed_error("video extension", result, task_id=task_id)
 
                 except requests.exceptions.RequestException as e:
                     logger.warning(f"Polling request failed (Attempt {attempt + 1}/{max_retries}): {e}")
                     if attempt == max_retries - 1:
-                        raise RuntimeError(f"Failed to get video extension status after multiple retries: {e}") from e
+                        raise error_from_exception(e, fields={"task_id": task_id}) from e
 
-            raise RuntimeError("Kling video extension task timed out.")
+            raise task_timeout_error("video extension", task_id=task_id)
 
         yield extend_video
