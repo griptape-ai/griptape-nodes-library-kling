@@ -11,7 +11,8 @@ from griptape_nodes.retained_mode.griptape_nodes import logger
 from kling_api import raise_for_kling_error
 from kling_auth import get_auth_headers, validate_credentials
 from kling_errors import (
-    error_from_request_exception,
+    API_KEY_NAME,
+    PROVIDER,
     task_failed_error,
     task_id_from_response,
     task_timeout_error,
@@ -188,9 +189,9 @@ class KlingAI_VideoExtension(ControlNode):
                     logger.error(f"Kling Video Extension error body: {json.dumps(response.json(), indent=2)}")
                 except Exception:
                     logger.error(f"Kling Video Extension error text: {response.text}")
-            raise_for_kling_error(response, action="submit a video-extension generation to Kling")
+            raise_for_kling_error(response)
 
-            task_id = task_id_from_response(response, action="submit a video-extension generation to Kling")
+            task_id = task_id_from_response(response)
             poll_url = f"{BASE_URL}/{task_id}"
 
             # Polling for completion
@@ -231,18 +232,16 @@ class KlingAI_VideoExtension(ControlNode):
 
                     if status == "failed":
                         logger.error(f"Kling video extension failed: {result['data'].get('task_status_msg')}")
-                        raise task_failed_error(
-                            "video extension", result["data"].get("task_status_msg"), task_id=task_id, result=result
-                        )
+                        raise task_failed_error("video extension", result, task_id=task_id)
 
                 except requests.exceptions.RequestException as e:
                     logger.warning(f"Polling request failed (Attempt {attempt + 1}/{max_retries}): {e}")
                     if attempt == max_retries - 1:
-                        raise error_from_request_exception(
+                        raise NodeError.from_request_exception(
                             e,
-                            action="check the video extension status",
+                            provider=PROVIDER,
+                            secret_name=API_KEY_NAME,
                             fields={"task_id": task_id},
-                            attempts=max_retries,
                         ) from e
 
             raise task_timeout_error("video extension", task_id=task_id)

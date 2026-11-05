@@ -16,7 +16,8 @@ from griptape_nodes.traits.widget import Widget
 from kling_api import raise_for_kling_error
 from kling_auth import get_auth_headers, validate_credentials
 from kling_errors import (
-    error_from_request_exception,
+    API_KEY_NAME,
+    PROVIDER,
     task_failed_error,
     task_id_from_response,
     task_timeout_error,
@@ -313,9 +314,9 @@ class KlingV3MultiShot(ControlNode):
         logger.info(f"Initial response status: {response.status_code}")
         logger.info(f"Initial response text: {response.text[:500]}")
 
-        raise_for_kling_error(response, action="submit a multi-shot generation to Kling")
+        raise_for_kling_error(response)
 
-        task_id = task_id_from_response(response, action="submit a multi-shot generation to Kling")
+        task_id = task_id_from_response(response)
         logger.info(f"Task created with ID: {task_id}")
 
         # Poll for completion
@@ -343,18 +344,16 @@ class KlingV3MultiShot(ControlNode):
                     logger.info(f"Video generation succeeded. URL: {video_url}")
                     break
                 if status == "failed":
-                    raise task_failed_error(
-                        "multi-shot generation", result["data"].get("task_status_msg"), task_id=task_id, result=result
-                    )
+                    raise task_failed_error("multi-shot generation", result, task_id=task_id)
 
             except requests.exceptions.RequestException as e:
                 logger.warning(f"Polling request failed (attempt {attempt + 1}/{max_retries}): {e}")
                 if attempt == max_retries - 1:
-                    raise error_from_request_exception(
+                    raise NodeError.from_request_exception(
                         e,
-                        action="check the multi-shot generation status",
+                        provider=PROVIDER,
+                        secret_name=API_KEY_NAME,
                         fields={"task_id": task_id},
-                        attempts=max_retries,
                     ) from e
 
         if not video_url:
@@ -366,8 +365,8 @@ class KlingV3MultiShot(ControlNode):
             download_response.raise_for_status()
             video_bytes = download_response.content
         except requests.exceptions.RequestException as e:
-            raise error_from_request_exception(
-                e, action="download the generated video", fields={"task_id": task_id}
+            raise NodeError.from_request_exception(
+                e, provider=PROVIDER, secret_name=API_KEY_NAME, fields={"task_id": task_id}
             ) from e
 
         dest = self._output_file.build_file()

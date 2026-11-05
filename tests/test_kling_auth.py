@@ -167,7 +167,7 @@ def test_validation_reports_incomplete_credentials(secrets: Callable[..., None],
 
     assert len(errors) == 1
     assert isinstance(errors[0], NodeError)
-    assert [link.url for link in errors[0].links][0] == "#settings-secrets?filter=KLING"
+    assert errors[0].links[0].url.startswith("#settings-secrets?filter=KLING_")
 
 
 def test_the_precedence_note_names_the_mechanism_that_won(secrets: Callable[..., None]) -> None:

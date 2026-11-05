@@ -10,9 +10,9 @@ to clear the pair first.
 import time
 
 import jwt
-from griptape_nodes.exe_types.core_types import NodeError
+from griptape_nodes.exe_types.core_types import NodeError, NodeErrorLink
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from kling_errors import missing_credentials_error
+from kling_errors import KLING_KEYS_URL
 
 SERVICE = "Kling"
 API_KEY_ENV_VAR = "KLING_API_KEY"
@@ -109,20 +109,18 @@ def _resolve_auth_token() -> str | None:
 
 
 def _credentials_error() -> NodeError:
-    """Describe what to set, naming the half of a pair that is missing, with links to the fix."""
+    """Name the half of a pair that is missing, or link to the key page when nothing is set."""
     access_key = _get_secret(ACCESS_KEY_ENV_VAR)
     secret_key = _get_secret(SECRET_KEY_ENV_VAR)
 
     if access_key and not secret_key:
-        return missing_credentials_error(
-            f"{ACCESS_KEY_ENV_VAR} is set but {SECRET_KEY_ENV_VAR} is empty. "
-            f"Set {SECRET_KEY_ENV_VAR} in Settings → API Keys & Secrets, or set {API_KEY_ENV_VAR} to a Kling API key "
-            "instead, then run the node again."
-        )
-    if secret_key and not access_key:
-        return missing_credentials_error(
-            f"{SECRET_KEY_ENV_VAR} is set but {ACCESS_KEY_ENV_VAR} is empty. "
-            f"Set {ACCESS_KEY_ENV_VAR} in Settings → API Keys & Secrets, or set {API_KEY_ENV_VAR} to a Kling API key "
-            "instead, then run the node again."
-        )
-    return missing_credentials_error()
+        missing = SECRET_KEY_ENV_VAR
+    elif secret_key and not access_key:
+        missing = ACCESS_KEY_ENV_VAR
+    else:
+        return NodeError.from_missing_secret(API_KEY_ENV_VAR, key_url=KLING_KEYS_URL)
+    return NodeError(
+        f"{missing} is empty. Set it in Settings → API Keys & Secrets, or set {API_KEY_ENV_VAR} to a Kling API key "
+        "instead, then run the node again.",
+        links=[NodeErrorLink.from_secret(missing)],
+    )

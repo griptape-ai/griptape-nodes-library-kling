@@ -17,7 +17,8 @@ from griptape_nodes.traits.options import Options
 from kling_api import raise_for_kling_error
 from kling_auth import get_auth_headers, validate_credentials
 from kling_errors import (
-    error_from_request_exception,
+    API_KEY_NAME,
+    PROVIDER,
     task_failed_error,
     task_id_from_response,
     task_result_error,
@@ -311,9 +312,9 @@ class KlingAI_MotionControl(SuccessFailureNode):
         logger.info("Kling Motion Control response status: %s", response.status_code)
         logger.debug("Kling Motion Control response headers: %s", dict(response.headers))
 
-        raise_for_kling_error(response, action="submit a motion-control generation to Kling")
+        raise_for_kling_error(response)
 
-        task_id = task_id_from_response(response, action="submit a motion-control generation to Kling")
+        task_id = task_id_from_response(response)
         self.parameter_output_values["generation_id"] = task_id
         self._task_submitted = True
         return task_id
@@ -325,9 +326,7 @@ class KlingAI_MotionControl(SuccessFailureNode):
 
         while True:
             if time.monotonic() - start_time > POLL_TIMEOUT_SECONDS:
-                raise task_timeout_error(
-                    "motion control generation", task_id=task_id, minutes=POLL_TIMEOUT_SECONDS / 60
-                )
+                raise task_timeout_error("motion control generation", task_id=task_id)
 
             time.sleep(POLL_INTERVAL_SECONDS)
             attempt += 1
@@ -335,18 +334,10 @@ class KlingAI_MotionControl(SuccessFailureNode):
             try:
                 status_resp = requests.get(poll_url, headers=headers, timeout=30)
                 status_resp.raise_for_status()
-            except requests.exceptions.RequestException as exc:
-                raise error_from_request_exception(
-                    exc, action="check the motion control status", fields={"task_id": task_id}
-                ) from exc
-
-            try:
                 status_json = status_resp.json()
-            except ValueError as exc:
-                raise error_from_request_exception(
-                    requests.exceptions.JSONDecodeError(str(exc), status_resp.text, 0),
-                    action="check the motion control status",
-                    fields={"task_id": task_id},
+            except requests.exceptions.RequestException as exc:
+                raise NodeError.from_request_exception(
+                    exc, provider=PROVIDER, secret_name=API_KEY_NAME, fields={"task_id": task_id}
                 ) from exc
 
             self.parameter_output_values["provider_response"] = status_json
@@ -357,12 +348,7 @@ class KlingAI_MotionControl(SuccessFailureNode):
                 self._handle_completion(status_json, task_id)
                 return
             if status == "failed":
-                raise task_failed_error(
-                    "motion control generation",
-                    status_json.get("data", {}).get("task_status_msg"),
-                    task_id=task_id,
-                    result=status_json,
-                )
+                raise task_failed_error("motion control generation", status_json, task_id=task_id)
 
     def _handle_completion(self, response_json: dict[str, Any], task_id: str) -> None:
         videos = response_json.get("data", {}).get("task_result", {}).get("videos", [])

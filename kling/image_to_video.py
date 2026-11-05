@@ -16,7 +16,8 @@ from griptape_nodes.traits.slider import Slider
 from kling_api import raise_for_kling_error
 from kling_auth import get_auth_headers, validate_credentials
 from kling_errors import (
-    error_from_request_exception,
+    API_KEY_NAME,
+    PROVIDER,
     task_failed_error,
     task_id_from_response,
     task_result_error,
@@ -521,9 +522,9 @@ class KlingAI_ImageToVideo(ControlNode):
             logger.info(f"Initial response status: {response.status_code}")
             logger.info(f"Initial response headers: {dict(response.headers)}")
             logger.info(f"Initial response text: {response.text}")
-            raise_for_kling_error(response, action="submit an image-to-video generation to Kling")
+            raise_for_kling_error(response)
 
-            task_id = task_id_from_response(response, action="submit an image-to-video generation to Kling")
+            task_id = task_id_from_response(response)
 
             poll_url = f"{BASE_URL}/{task_id}"  # Assuming polling uses the same base and task_id pattern
             video_url = None
@@ -563,19 +564,17 @@ class KlingAI_ImageToVideo(ControlNode):
                         break
                     if status == "failed":
                         logger.error(f"Kling video generation failed: {result['data'].get('task_status_msg')}")
-                        raise task_failed_error(
-                            "video generation", result["data"].get("task_status_msg"), task_id=task_id, result=result
-                        )
+                        raise task_failed_error("video generation", result, task_id=task_id)
                     # Other statuses like 'processing', 'pending' mean continue polling
 
                 except requests.exceptions.RequestException as e:
                     logger.warning(f"Polling request failed (Attempt {attempt + 1}/{max_retries}): {e}")
                     if attempt == max_retries - 1:
-                        raise error_from_request_exception(
+                        raise NodeError.from_request_exception(
                             e,
-                            action="check the video generation status",
+                            provider=PROVIDER,
+                            secret_name=API_KEY_NAME,
                             fields={"task_id": task_id},
-                            attempts=max_retries,
                         ) from e
 
             if not video_url:

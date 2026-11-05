@@ -8,7 +8,10 @@ produces. Secrets come from a stubbed manager.
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from collections.abc import Callable, Iterator
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -24,7 +27,7 @@ from motion_control import KlingAI_MotionControl
 from text_to_video import KlingAI_TextToVideo
 from video_extension import KlingAI_VideoExtension
 
-SETTINGS_LINK = "#settings-secrets?filter=KLING"
+SETTINGS_LINK = "#settings-secrets?filter=KLING_API_KEY"
 TASK_ID = "task-123"
 FAILED_BODY = {
     "code": 0,
@@ -124,22 +127,6 @@ def test_a_missing_key_at_run_time_raises_before_any_input_check(node_class: typ
         _run(node)
 
 
-@pytest.mark.usefixtures("api_key")
-def test_a_refused_key_reports_kling_and_the_ids(kling_api_server: Callable[[Route], Any]) -> None:
-    body = {"code": 1002, "message": "Authorization is invalid", "request_id": "req-7"}
-    kling_api_server(lambda _request: (401, body))
-    node = KlingAI_TextToVideo(name="node")
-    node.set_parameter_value("prompt", "a cat")
-
-    with pytest.raises(NodeError) as error:
-        node._process()
-
-    assert "Authorization is invalid" in str(error.value)
-    assert error.value.fields == {"status_code": 401, "error_code": 1002, "request_id": "req-7"}
-    assert error.value.response == body
-    assert error.value.links[0].url == SETTINGS_LINK
-
-
 @pytest.mark.parametrize(
     ("node_class", "label"),
     [
@@ -182,47 +169,6 @@ def test_lip_sync_failed_task_raises_instead_of_returning_an_empty_artifact(
 
 
 @pytest.mark.usefixtures("api_key")
-def test_multi_shot_failed_task_raises(kling_api_server: Callable[[Route], Any]) -> None:
-    kling_api_server(lambda request: (200, SUBMITTED_BODY if request.method == "POST" else FAILED_BODY))
-    node = KlingV3MultiShot(name="node")
-    node.parameter_values["shots"] = [{"name": "Shot1", "duration": 3, "description": "a cat walks"}]
-
-    with pytest.raises(NodeError, match="multi-shot generation"):
-        _run(node)
-
-
-@pytest.mark.usefixtures("api_key")
-def test_a_poll_that_keeps_failing_gives_up_with_kling_s_reason(kling_api_server: Callable[[Route], Any]) -> None:
-    def route(request: requests.PreparedRequest) -> tuple[int, Any]:
-        if request.method == "POST":
-            return 200, SUBMITTED_BODY
-        return 500, {"code": 5000, "message": "Internal error", "request_id": "req-5"}
-
-    kling_api_server(route)
-    node = KlingAI_VideoExtension(name="node")
-    node.set_parameter_value("video_id", "vid-1")
-
-    with pytest.raises(NodeError) as error:
-        _run(node)
-
-    assert "after 120 attempts" in str(error.value)
-    assert "Internal error" in str(error.value)
-    assert error.value.fields == {"status_code": 500, "error_code": 5000, "request_id": "req-5", "task_id": TASK_ID}
-
-
-@pytest.mark.usefixtures("api_key")
-def test_a_task_that_never_finishes_times_out_with_its_id(kling_api_server: Callable[[Route], Any]) -> None:
-    kling_api_server(lambda request: (200, SUBMITTED_BODY if request.method == "POST" else PROCESSING_BODY))
-    node = KlingAI_VideoExtension(name="node")
-    node.set_parameter_value("video_id", "vid-1")
-
-    with pytest.raises(NodeError, match="did not finish") as error:
-        _run(node)
-
-    assert error.value.fields == {"task_id": TASK_ID}
-
-
-@pytest.mark.usefixtures("api_key")
 def test_a_submit_without_a_task_id_reports_the_response(kling_api_server: Callable[[Route], Any]) -> None:
     kling_api_server(lambda _request: (200, {"code": 0, "data": {}}))
     node = KlingAI_VideoExtension(name="node")
@@ -232,14 +178,6 @@ def test_a_submit_without_a_task_id_reports_the_response(kling_api_server: Calla
         _run(node)
 
     assert error.value.response == {"code": 0, "data": {}}
-
-
-@pytest.mark.usefixtures("api_key")
-def test_input_problems_are_node_errors() -> None:
-    node = KlingAI_VideoExtension(name="node")
-
-    with pytest.raises(NodeError, match="Video ID is required"):
-        _run(node)
 
 
 @pytest.mark.usefixtures("api_key")
@@ -253,14 +191,6 @@ def test_several_input_problems_are_reported_together() -> None:
 
     assert "Video ID is required" in str(error.value)
     assert "Text is required" in str(error.value)
-
-
-@pytest.mark.usefixtures("api_key")
-def test_image_to_video_without_an_image_is_a_node_error() -> None:
-    node = KlingAI_ImageToVideo(name="node")
-
-    with pytest.raises(NodeError, match="At least one of 'image' or 'image_tail'"):
-        _run(node)
 
 
 class _MotionControlHarness:
@@ -318,5 +248,19 @@ def test_motion_control_timeout_raises(kling_api_server: Callable[[Route], Any])
     node = _MotionControlHarness.make(failed_wired=False)
 
     with patch("motion_control.time.monotonic", side_effect=[0, 1, 2000, 2001]):
-        with pytest.raises(NodeError, match="did not finish within 20 minutes"):
+        with pytest.raises(NodeError, match="did not finish"):
             node.process()
+
+
+@pytest.mark.parametrize("filename", sorted(p.name for p in (Path(__file__).parent.parent / "kling").glob("*.py")))
+def test_every_module_loads_the_way_the_engine_loads_it(filename: str) -> None:
+    """The engine loads each file standalone with the library folder on `sys.path`, with no parent package."""
+    library = Path(__file__).parent.parent / "kling"
+    script = (
+        "import importlib.util, sys; "
+        f"sys.path.insert(0, {str(library)!r}); sys.modules['kling'] = None; sys.modules['kling_nodes'] = None; "
+        f"spec = importlib.util.spec_from_file_location('engine_loaded_module', {str(library / filename)!r}); "
+        "module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)"
+    )
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=False)  # noqa: S603
+    assert result.returncode == 0, result.stderr

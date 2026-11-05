@@ -14,7 +14,8 @@ from griptape_nodes.traits.slider import Slider
 from kling_api import raise_for_kling_error
 from kling_auth import get_auth_headers, validate_credentials
 from kling_errors import (
-    error_from_request_exception,
+    API_KEY_NAME,
+    PROVIDER,
     task_failed_error,
     task_id_from_response,
     task_timeout_error,
@@ -409,8 +410,8 @@ class KlingAI_TextToVideo(ControlNode):
             logger.info(f"Initial response headers: {dict(response.headers)}")
             logger.info(f"Initial response text: {response.text[:500]}...")  # First 500 chars
 
-            raise_for_kling_error(response, action="submit a text-to-video generation to Kling")
-            task_id = task_id_from_response(response, action="submit a text-to-video generation to Kling")
+            raise_for_kling_error(response)
+            task_id = task_id_from_response(response)
             logger.info(f"Task created with ID: {task_id}")
 
             poll_url = f"{BASE_URL}/{task_id}"
@@ -451,11 +452,11 @@ class KlingAI_TextToVideo(ControlNode):
                             logger.info(f"Retrying in 5 seconds... (attempt {retry_count}/{max_retries})")
                             continue
                         else:
-                            raise error_from_request_exception(
+                            raise NodeError.from_request_exception(
                                 e,
-                                action="check the video generation status",
+                                provider=PROVIDER,
+                                secret_name=API_KEY_NAME,
                                 fields={"task_id": task_id},
-                                attempts=max_retries,
                             ) from e
 
                     status = result["data"]["task_status"]
@@ -469,19 +470,17 @@ class KlingAI_TextToVideo(ControlNode):
                         break
                     if status == "failed":
                         logger.error(f"Video generation failed: {result['data'].get('task_status_msg')}")
-                        raise task_failed_error(
-                            "video generation", result["data"].get("task_status_msg"), task_id=task_id, result=result
-                        )
+                        raise task_failed_error("video generation", result, task_id=task_id)
                     # Continue polling for "submitted", "processing", etc.
 
                 except requests.exceptions.RequestException as e:
                     logger.warning(f"Request failed (attempt {retry_count}/{max_retries}): {e}")
                     if retry_count >= max_retries:
-                        raise error_from_request_exception(
+                        raise NodeError.from_request_exception(
                             e,
-                            action="check the video generation status",
+                            provider=PROVIDER,
+                            secret_name=API_KEY_NAME,
                             fields={"task_id": task_id},
-                            attempts=max_retries,
                         ) from e
                     logger.info("Retrying in 5 seconds...")
                     continue

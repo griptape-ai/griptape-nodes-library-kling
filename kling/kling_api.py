@@ -12,12 +12,11 @@ from kling_auth import credential_precedence_note
 from kling_errors import error_from_response, response_failed
 
 
-def raise_for_kling_error(response: requests.Response, *, action: str) -> None:
+def raise_for_kling_error(response: requests.Response) -> None:
     """Raise carrying Kling's own explanation when a request failed.
 
     Args:
         response: The response to a Kling API call.
-        action: What the node was attempting, completing the sentence "Attempted to ...".
 
     Raises:
         NodeError: If the response reports either an HTTP or an API-level failure. The status code,
@@ -28,4 +27,4 @@ def raise_for_kling_error(response: requests.Response, *, action: str) -> None:
 
     # A rejected credential and an empty balance can both mean the token came from the wrong
     # mechanism, so the note about which one won rides along; kling_errors attaches it only for those.
-    raise error_from_response(response, action=action, precedence_note=credential_precedence_note())
+    raise error_from_response(response, precedence_note=credential_precedence_note())
