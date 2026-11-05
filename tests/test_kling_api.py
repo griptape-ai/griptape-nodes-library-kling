@@ -15,6 +15,7 @@ import pytest
 import requests
 from griptape_nodes.exe_types.core_types import NodeError
 from kling_api import raise_for_kling_error
+from kling_errors import error_from_exception
 
 PRECEDENCE_NOTE = "KLING_API_KEY takes precedence"
 
@@ -81,3 +82,41 @@ def test_an_unrelated_failure_does_not_blame_the_credentials() -> None:
             raise_for_kling_error(_response(404, {"code": 1203, "message": "The model is discontinued"}))
 
     assert PRECEDENCE_NOTE not in str(error.value)
+
+
+def test_a_403_is_not_reported_as_a_refused_key() -> None:
+    """Kling's 403 body is unconfirmed, and a 403 can be a permission or account problem, so only 401 and 1000-1004 mean a bad key."""
+    body = {"code": 1103, "message": "Unauthorized access to requested resource"}
+
+    with pytest.raises(NodeError) as error:
+        raise_for_kling_error(_response(403, body))
+
+    assert str(error.value) == "Unauthorized access to requested resource"
+    assert error.value.links == []
+    assert error.value.fields["status_code"] == 403
+
+
+def test_an_empty_balance_in_a_200_is_not_a_refused_key() -> None:
+    with pytest.raises(NodeError) as error:
+        raise_for_kling_error(_response(200, {"code": 1102, "message": "Account balance not enough"}))
+
+    assert str(error.value) == "Account balance not enough"
+    assert error.value.links == []
+
+
+def test_an_auth_code_in_a_200_is_a_refused_key() -> None:
+    with pytest.raises(NodeError, match="Authorization has expired") as error:
+        raise_for_kling_error(_response(200, {"code": 1004, "message": "Authorization has expired"}))
+
+    assert error.value.links[0].url == "#settings-secrets?filter=KLING_API_KEY"
+
+
+def test_a_poll_403_raised_as_an_exception_is_not_a_refused_key() -> None:
+    response = _response(403, {"code": 1103, "message": "Forbidden here"})
+    exc = requests.exceptions.HTTPError(response=response)
+
+    error = error_from_exception(exc, fields={"task_id": "t-1"})
+
+    assert str(error) == "Forbidden here"
+    assert error.links == []
+    assert error.fields["task_id"] == "t-1"

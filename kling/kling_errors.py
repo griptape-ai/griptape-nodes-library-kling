@@ -18,6 +18,7 @@ __all__ = [
     "API_KEY_NAME",
     "KLING_KEYS_URL",
     "PROVIDER",
+    "error_from_exception",
     "error_from_response",
     "response_failed",
     "task_failed_error",
@@ -32,8 +33,10 @@ API_KEY_NAME = "KLING_API_KEY"
 KLING_KEYS_URL = "https://app.klingai.com/global/dev/api-key"
 
 SUCCESS_CODE = 0
+HTTP_UNAUTHORIZED = 401
 # 1000 to 1004 are Kling's authorization codes. 1102 is an empty balance, which the wrong account also causes.
-CREDENTIAL_SENSITIVE_CODES = (1000, 1001, 1002, 1003, 1004, 1102)
+AUTH_CODES = (1000, 1001, 1002, 1003, 1004)
+CREDENTIAL_SENSITIVE_CODES = (*AUTH_CODES, 1102)
 
 
 def _body(response: requests.Response) -> dict[str, Any]:
@@ -49,6 +52,23 @@ def response_failed(response: requests.Response) -> bool:
     return not (response.ok and _body(response).get("code") in (None, SUCCESS_CODE))
 
 
+def _key_refused(response: requests.Response) -> bool:
+    """Kling answers a bad token with 401 and codes 1000 to 1004. Its 403 body is unconfirmed, so a 403 is not one."""
+    return response.status_code == HTTP_UNAUTHORIZED or _body(response).get("code") in AUTH_CODES
+
+
+def error_from_exception(exc: Exception, *, fields: dict[str, str | int] | None = None) -> NodeError:
+    """`NodeError.from_request_exception` with Kling's idea of a refused key."""
+    response = getattr(exc, "response", None)
+    return NodeError.from_request_exception(
+        exc,
+        provider=PROVIDER,
+        secret_name=API_KEY_NAME,
+        key_refused=_key_refused(response) if response is not None else None,
+        fields=fields,
+    )
+
+
 def error_from_response(response: requests.Response, *, precedence_note: str | None = None) -> NodeError:
     """The error for a failed Kling response. Kling's `code` is an int, so it is added to `fields` here."""
     code = _body(response).get("code")
@@ -56,6 +76,7 @@ def error_from_response(response: requests.Response, *, precedence_note: str | N
         response,
         provider=PROVIDER,
         secret_name=API_KEY_NAME,
+        key_refused=_key_refused(response),
         fields={"error_code": code} if code is not None else None,
     )
     if precedence_note and code in CREDENTIAL_SENSITIVE_CODES:

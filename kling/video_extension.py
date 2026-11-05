@@ -11,8 +11,7 @@ from griptape_nodes.retained_mode.griptape_nodes import logger
 from kling_api import raise_for_kling_error
 from kling_auth import get_auth_headers, validate_credentials
 from kling_errors import (
-    API_KEY_NAME,
-    PROVIDER,
+    error_from_exception,
     task_failed_error,
     task_id_from_response,
     task_timeout_error,
@@ -237,10 +236,8 @@ class KlingAI_VideoExtension(ControlNode):
                 except requests.exceptions.RequestException as e:
                     logger.warning(f"Polling request failed (Attempt {attempt + 1}/{max_retries}): {e}")
                     if attempt == max_retries - 1:
-                        raise NodeError.from_request_exception(
+                        raise error_from_exception(
                             e,
-                            provider=PROVIDER,
-                            secret_name=API_KEY_NAME,
                             fields={"task_id": task_id},
                         ) from e
 

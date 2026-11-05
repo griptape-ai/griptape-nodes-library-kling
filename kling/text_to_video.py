@@ -14,8 +14,7 @@ from griptape_nodes.traits.slider import Slider
 from kling_api import raise_for_kling_error
 from kling_auth import get_auth_headers, validate_credentials
 from kling_errors import (
-    API_KEY_NAME,
-    PROVIDER,
+    error_from_exception,
     task_failed_error,
     task_id_from_response,
     task_timeout_error,
@@ -452,10 +451,8 @@ class KlingAI_TextToVideo(ControlNode):
                             logger.info(f"Retrying in 5 seconds... (attempt {retry_count}/{max_retries})")
                             continue
                         else:
-                            raise NodeError.from_request_exception(
+                            raise error_from_exception(
                                 e,
-                                provider=PROVIDER,
-                                secret_name=API_KEY_NAME,
                                 fields={"task_id": task_id},
                             ) from e
 
@@ -476,10 +473,8 @@ class KlingAI_TextToVideo(ControlNode):
                 except requests.exceptions.RequestException as e:
                     logger.warning(f"Request failed (attempt {retry_count}/{max_retries}): {e}")
                     if retry_count >= max_retries:
-                        raise NodeError.from_request_exception(
+                        raise error_from_exception(
                             e,
-                            provider=PROVIDER,
-                            secret_name=API_KEY_NAME,
                             fields={"task_id": task_id},
                         ) from e
                     logger.info("Retrying in 5 seconds...")

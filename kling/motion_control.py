@@ -17,8 +17,7 @@ from griptape_nodes.traits.options import Options
 from kling_api import raise_for_kling_error
 from kling_auth import get_auth_headers, validate_credentials
 from kling_errors import (
-    API_KEY_NAME,
-    PROVIDER,
+    error_from_exception,
     task_failed_error,
     task_id_from_response,
     task_result_error,
@@ -336,9 +335,7 @@ class KlingAI_MotionControl(SuccessFailureNode):
                 status_resp.raise_for_status()
                 status_json = status_resp.json()
             except requests.exceptions.RequestException as exc:
-                raise NodeError.from_request_exception(
-                    exc, provider=PROVIDER, secret_name=API_KEY_NAME, fields={"task_id": task_id}
-                ) from exc
+                raise error_from_exception(exc, fields={"task_id": task_id}) from exc
 
             self.parameter_output_values["provider_response"] = status_json
             logger.info("%s polling attempt #%d", self.name, attempt)

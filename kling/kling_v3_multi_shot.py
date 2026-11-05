@@ -16,8 +16,7 @@ from griptape_nodes.traits.widget import Widget
 from kling_api import raise_for_kling_error
 from kling_auth import get_auth_headers, validate_credentials
 from kling_errors import (
-    API_KEY_NAME,
-    PROVIDER,
+    error_from_exception,
     task_failed_error,
     task_id_from_response,
     task_timeout_error,
@@ -349,10 +348,8 @@ class KlingV3MultiShot(ControlNode):
             except requests.exceptions.RequestException as e:
                 logger.warning(f"Polling request failed (attempt {attempt + 1}/{max_retries}): {e}")
                 if attempt == max_retries - 1:
-                    raise NodeError.from_request_exception(
+                    raise error_from_exception(
                         e,
-                        provider=PROVIDER,
-                        secret_name=API_KEY_NAME,
                         fields={"task_id": task_id},
                     ) from e
 
@@ -365,9 +362,7 @@ class KlingV3MultiShot(ControlNode):
             download_response.raise_for_status()
             video_bytes = download_response.content
         except requests.exceptions.RequestException as e:
-            raise NodeError.from_request_exception(
-                e, provider=PROVIDER, secret_name=API_KEY_NAME, fields={"task_id": task_id}
-            ) from e
+            raise error_from_exception(e, fields={"task_id": task_id}) from e
 
         dest = self._output_file.build_file()
         saved = dest.write_bytes(video_bytes)
