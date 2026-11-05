@@ -63,6 +63,14 @@ def validate_credentials() -> list[NodeError]:
     return []
 
 
+class KlingCredentialCheck:
+    """Mixin for a node class: report a missing credential first and on its own before the node runs."""
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        base_errors = super().validate_before_node_run()
+        return list(validate_credentials()) or base_errors
+
+
 def using_api_key() -> bool:
     """True when the token comes from KLING_API_KEY rather than the Access Key / Secret Key pair."""
     return bool(_get_secret(API_KEY_ENV_VAR))

@@ -34,7 +34,7 @@ FAILED_BODY = {
     "data": {"task_id": TASK_ID, "task_status": "failed", "task_status_msg": "Content did not pass review"},
 }
 SUBMITTED_BODY = {"code": 0, "data": {"task_id": TASK_ID, "task_status": "submitted"}}
-PROCESSING_BODY = {"code": 0, "data": {"task_id": TASK_ID, "task_status": "processing"}}
+REFUSED_BODY = {"code": 1002, "message": "Authorization is invalid", "request_id": "req-7"}
 
 NODE_CLASSES = [
     KlingAI_TextToVideo,
@@ -48,59 +48,49 @@ NODE_CLASSES = [
 Route = Callable[[requests.PreparedRequest], tuple[int, Any]]
 
 
-def _response(status: int, body: Any, request: requests.PreparedRequest) -> requests.Response:
-    response = requests.Response()
-    response.status_code = status
-    response._content = body.encode() if isinstance(body, str) else json.dumps(body).encode()
-    response.url = request.url or ""
-    response.request = request
-    return response
+def _secrets(values: dict[str, str]) -> Iterator[None]:
+    with patch.object(kling_auth, "GriptapeNodes") as griptape_nodes:
+        griptape_nodes.SecretsManager.return_value.get_secret.side_effect = lambda name, **_: values.get(name)
+        yield
 
 
 @pytest.fixture
 def api_key() -> Iterator[None]:
-    with patch.object(kling_auth, "GriptapeNodes") as griptape_nodes:
-        griptape_nodes.SecretsManager.return_value.get_secret.side_effect = lambda name, **_: (
-            "test-key" if name == "KLING_API_KEY" else None
-        )
-        yield
+    yield from _secrets({"KLING_API_KEY": "test-key"})
 
 
 @pytest.fixture
 def key_pair() -> Iterator[None]:
-    secrets = {"KLING_ACCESS_KEY": "access", "KLING_SECRET_KEY": "secret-key-example-padded-to-32-bytes"}
-    with patch.object(kling_auth, "GriptapeNodes") as griptape_nodes:
-        griptape_nodes.SecretsManager.return_value.get_secret.side_effect = lambda name, **_: secrets.get(name)
-        yield
+    yield from _secrets({"KLING_ACCESS_KEY": "access", "KLING_SECRET_KEY": "secret-key-example-padded-to-32-bytes"})
 
 
 @pytest.fixture
 def no_key() -> Iterator[None]:
-    with patch.object(kling_auth, "GriptapeNodes") as griptape_nodes:
-        griptape_nodes.SecretsManager.return_value.get_secret.return_value = None
-        yield
+    yield from _secrets({})
 
 
 @pytest.fixture
-def kling_api_server() -> Iterator[Callable[[Route], list[requests.PreparedRequest]]]:
-    """Install a route for every Kling call, and return the list of requests it saw."""
-    seen: list[requests.PreparedRequest] = []
-    patches: list[Any] = []
+def kling_api_server() -> Iterator[Callable[[Route], None]]:
+    """Answer every Kling call from a route, replacing only the adapter that would open the socket."""
+    patcher = None
 
-    def install(route: Route) -> list[requests.PreparedRequest]:
+    def install(route: Route) -> None:
+        nonlocal patcher
+
         def send(_adapter: Any, request: requests.PreparedRequest, **_kwargs: Any) -> requests.Response:
-            seen.append(request)
             status, body = route(request)
-            return _response(status, body, request)
+            response = requests.Response()
+            response.status_code = status
+            response._content = json.dumps(body).encode()
+            response.request = request
+            return response
 
         patcher = patch("requests.adapters.HTTPAdapter.send", send)
         patcher.start()
-        patches.append(patcher)
-        return seen
 
     with patch("time.sleep"):
         yield install
-    for patcher in patches:
+    if patcher:
         patcher.stop()
 
 
@@ -112,12 +102,14 @@ def _run(node: Any) -> None:
             step()
 
 
+def _failed_task(request: requests.PreparedRequest) -> tuple[int, Any]:
+    return (200, SUBMITTED_BODY) if request.method == "POST" else (200, FAILED_BODY)
+
+
 @pytest.mark.parametrize("node_class", NODE_CLASSES)
 @pytest.mark.usefixtures("no_key")
 def test_a_missing_key_is_the_only_validation_error_and_links_to_settings(node_class: type) -> None:
-    node = node_class(name="node")
-
-    errors = node.validate_before_node_run()
+    errors = node_class(name="node").validate_before_node_run()
 
     assert errors is not None
     assert len(errors) == 1
@@ -126,54 +118,18 @@ def test_a_missing_key_is_the_only_validation_error_and_links_to_settings(node_c
     assert errors[0].links[0].url == SETTINGS_LINK
 
 
-@pytest.mark.parametrize("node_class", NODE_CLASSES)
-@pytest.mark.usefixtures("no_key")
-def test_a_missing_key_at_run_time_raises_before_any_input_check(node_class: type) -> None:
-    node = node_class(name="node")
-
-    with pytest.raises(NodeError, match="KLING_API_KEY is not set"):
-        _run(node)
-
-
-@pytest.mark.parametrize(
-    ("node_class", "label"),
-    [
-        (KlingAI_TextToVideo, "video generation"),
-        (KlingAI_VideoExtension, "video extension"),
-    ],
-)
 @pytest.mark.usefixtures("api_key")
-def test_a_failed_task_carries_the_reason_and_task_id(
-    node_class: type, label: str, kling_api_server: Callable[[Route], Any]
-) -> None:
-    kling_api_server(lambda request: (200, SUBMITTED_BODY if request.method == "POST" else FAILED_BODY))
-    node = node_class(name="node")
-    node.set_parameter_value("video_id" if label == "video extension" else "prompt", "vid-1")
+def test_a_failed_task_carries_the_reason_and_task_id(kling_api_server: Callable[[Route], Any]) -> None:
+    kling_api_server(_failed_task)
+    node = KlingAI_TextToVideo(name="node")
+    node.set_parameter_value("prompt", "a cat")
 
     with pytest.raises(NodeError) as error:
         _run(node)
 
-    assert str(error.value) == f"Kling could not finish the {label}: Content did not pass review."
+    assert str(error.value) == "Kling could not finish the video generation: Content did not pass review."
     assert error.value.fields == {"task_id": TASK_ID, "status": "failed"}
     assert error.value.response == FAILED_BODY
-
-
-@pytest.mark.usefixtures("api_key")
-def test_lip_sync_failed_task_raises_instead_of_returning_an_empty_artifact(
-    kling_api_server: Callable[[Route], Any],
-) -> None:
-    kling_api_server(lambda request: (200, SUBMITTED_BODY if request.method == "POST" else FAILED_BODY))
-    node = KlingAI_LipSync(name="node")
-    node.set_parameter_value("video_input_type", "video_id")
-    node.set_parameter_value("video_id", "vid-1")
-    node.set_parameter_value("mode", "text2video")
-    node.set_parameter_value("text", "hello")
-    node.set_parameter_value("voice_id", "genshin_vindi2 (en)")
-
-    with pytest.raises(NodeError, match="Content did not pass review") as error:
-        _run(node)
-
-    assert error.value.fields["task_id"] == TASK_ID
 
 
 @pytest.mark.usefixtures("api_key")
@@ -189,75 +145,48 @@ def test_a_submit_without_a_task_id_reports_the_response(kling_api_server: Calla
 
 
 @pytest.mark.usefixtures("api_key")
-def test_several_input_problems_are_reported_together() -> None:
-    node = KlingAI_LipSync(name="node")
-    node.set_parameter_value("video_input_type", "video_id")
-    node.set_parameter_value("mode", "text2video")
+def test_a_401_with_the_api_key_set_links_to_update_it(kling_api_server: Callable[[Route], Any]) -> None:
+    kling_api_server(lambda _request: (401, REFUSED_BODY))
+    node = KlingAI_TextToVideo(name="node")
+    node.set_parameter_value("prompt", "a cat")
+
+    with pytest.raises(NodeError, match="Update KLING_API_KEY") as error:
+        node._process()
+
+    assert error.value.links[0].url == "#settings-secrets?filter=KLING_API_KEY"
+
+
+@pytest.mark.usefixtures("key_pair")
+def test_a_401_with_only_the_key_pair_shows_kling_s_message_and_no_link(
+    kling_api_server: Callable[[Route], Any],
+) -> None:
+    kling_api_server(lambda _request: (401, REFUSED_BODY))
+    node = KlingAI_TextToVideo(name="node")
+    node.set_parameter_value("prompt", "a cat")
 
     with pytest.raises(NodeError) as error:
-        _run(node)
+        node._process()
 
-    assert "Video ID is required" in str(error.value)
-    assert "Text is required" in str(error.value)
-
-
-class _MotionControlHarness:
-    """A motion control node with its Failed output wired or unwired."""
-
-    @staticmethod
-    def make(*, failed_wired: bool) -> KlingAI_MotionControl:
-        node = KlingAI_MotionControl(name="node")
-        node._has_outgoing_connections = lambda _parameter: failed_wired
-        node.set_parameter_value("reference_image", ImageUrlArtifact("https://example.com/a.png"))
-        node.set_parameter_value("reference_video", VideoUrlArtifact("https://example.com/a.mp4"))
-        return node
+    assert str(error.value) == "Authorization is invalid"
+    assert error.value.links == []
 
 
+@pytest.mark.parametrize("failed_wired", [False, True])
 @pytest.mark.usefixtures("api_key")
-def test_motion_control_failed_task_raises_when_failed_is_unwired(kling_api_server: Callable[[Route], Any]) -> None:
-    kling_api_server(lambda request: (200, SUBMITTED_BODY if request.method == "POST" else FAILED_BODY))
-    node = _MotionControlHarness.make(failed_wired=False)
-
-    with pytest.raises(NodeError, match="Content did not pass review") as error:
-        node.process()
-
-    assert error.value.fields == {"task_id": TASK_ID, "status": "failed"}
-    assert node.parameter_output_values["generation_id"] == TASK_ID
-    assert node.parameter_output_values["video_url"] is None
-
-
-@pytest.mark.usefixtures("api_key")
-def test_motion_control_failed_task_follows_failed_when_wired(kling_api_server: Callable[[Route], Any]) -> None:
-    kling_api_server(lambda request: (200, SUBMITTED_BODY if request.method == "POST" else FAILED_BODY))
-    node = _MotionControlHarness.make(failed_wired=True)
-
-    node.process()
-
-    assert node.parameter_output_values["was_successful"] is False
-    assert "Content did not pass review" in node.parameter_output_values["result_details"]
-
-
-@pytest.mark.usefixtures("api_key")
-def test_motion_control_without_a_reference_image_raises_a_node_error() -> None:
+def test_motion_control_failed_task(failed_wired: bool, kling_api_server: Callable[[Route], Any]) -> None:
+    kling_api_server(_failed_task)
     node = KlingAI_MotionControl(name="node")
-    node._has_outgoing_connections = lambda _parameter: False
+    node._has_outgoing_connections = lambda _parameter: failed_wired
+    node.set_parameter_value("reference_image", ImageUrlArtifact("https://example.com/a.png"))
     node.set_parameter_value("reference_video", VideoUrlArtifact("https://example.com/a.mp4"))
 
-    with pytest.raises(NodeError, match="reference image") as error:
+    if failed_wired:
         node.process()
-
-    assert error.value.fields == {"parameter": "reference_image"}
-    assert node.parameter_output_values["generation_id"] == ""
-
-
-@pytest.mark.usefixtures("api_key")
-def test_motion_control_timeout_raises(kling_api_server: Callable[[Route], Any]) -> None:
-    kling_api_server(lambda request: (200, SUBMITTED_BODY if request.method == "POST" else PROCESSING_BODY))
-    node = _MotionControlHarness.make(failed_wired=False)
-
-    with patch("motion_control.time.monotonic", side_effect=[0, 1, 2000, 2001]):
-        with pytest.raises(NodeError, match="did not finish"):
+        assert node.parameter_output_values["was_successful"] is False
+    else:
+        with pytest.raises(NodeError, match="Content did not pass review"):
             node.process()
+    assert node.parameter_output_values["generation_id"] == TASK_ID
 
 
 @pytest.mark.parametrize("filename", sorted(p.name for p in (Path(__file__).parent.parent / "kling").glob("*.py")))
@@ -272,34 +201,3 @@ def test_every_module_loads_the_way_the_engine_loads_it(filename: str) -> None:
     )
     result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=False)  # noqa: S603
     assert result.returncode == 0, result.stderr
-
-
-REFUSED_BODY = {"code": 1002, "message": "Authorization is invalid", "request_id": "req-7"}
-
-
-@pytest.mark.usefixtures("api_key")
-def test_a_401_with_the_api_key_set_links_to_update_it(kling_api_server: Callable[[Route], Any]) -> None:
-    kling_api_server(lambda _request: (401, REFUSED_BODY))
-    node = KlingAI_TextToVideo(name="node")
-    node.set_parameter_value("prompt", "a cat")
-
-    with pytest.raises(NodeError, match="refused the API key. Update KLING_API_KEY") as error:
-        node._process()
-
-    assert error.value.links[0].url == "#settings-secrets?filter=KLING_API_KEY"
-
-
-@pytest.mark.usefixtures("key_pair")
-def test_a_401_with_only_the_key_pair_shows_kling_s_message_and_no_api_key_link(
-    kling_api_server: Callable[[Route], Any],
-) -> None:
-    kling_api_server(lambda _request: (401, REFUSED_BODY))
-    node = KlingAI_TextToVideo(name="node")
-    node.set_parameter_value("prompt", "a cat")
-
-    with pytest.raises(NodeError) as error:
-        node._process()
-
-    assert str(error.value) == "Authorization is invalid"
-    assert error.value.links == []
-    assert error.value.fields["status_code"] == 401

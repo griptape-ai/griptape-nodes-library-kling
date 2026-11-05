@@ -15,7 +15,7 @@ from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from kling_api import raise_for_kling_error
-from kling_auth import get_auth_headers, validate_credentials
+from kling_auth import KlingCredentialCheck, get_auth_headers
 from kling_errors import (
     error_from_exception,
     task_failed_error,
@@ -31,7 +31,7 @@ POLL_INTERVAL_SECONDS = 5
 POLL_TIMEOUT_SECONDS = 1200
 
 
-class KlingAI_MotionControl(SuccessFailureNode):
+class KlingAI_MotionControl(KlingCredentialCheck, SuccessFailureNode):
     """Generate a video using Kling Motion Control.
 
     The Motion Control model transfers character actions from a reference video to a reference image,
@@ -398,11 +398,3 @@ class KlingAI_MotionControl(SuccessFailureNode):
         self.parameter_output_values["provider_response"] = None
         self.parameter_output_values["video_url"] = None
         self.parameter_output_values["kling_video_id"] = ""
-
-    def validate_before_node_run(self) -> list[Exception] | None:
-        """Report a missing Kling credential first and on its own, so the Settings link shows immediately."""
-        base_errors = super().validate_before_node_run()
-        credential_errors = validate_credentials()
-        if credential_errors:
-            return list(credential_errors)
-        return base_errors

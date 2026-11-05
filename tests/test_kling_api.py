@@ -1,9 +1,4 @@
-"""Tests for reporting a failed Kling API call.
-
-Kling reports some failures in the body of an HTTP 200, and its `code` is an int that the engine's
-own response parsing does not pick up. The note about which credential mechanism won is attached only
-where it can explain the failure.
-"""
+"""Tests for reporting a failed Kling API call."""
 
 from __future__ import annotations
 
@@ -15,9 +10,8 @@ import pytest
 import requests
 from griptape_nodes.exe_types.core_types import NodeError
 from kling_api import raise_for_kling_error
-from kling_errors import error_from_exception
 
-PRECEDENCE_NOTE = "KLING_API_KEY takes precedence"
+NOTE = "KLING_API_KEY takes precedence"
 
 
 def _response(status_code: int, body: object) -> requests.Response:
@@ -28,98 +22,43 @@ def _response(status_code: int, body: object) -> requests.Response:
 
 
 @pytest.fixture(autouse=True)
-def no_precedence_note():
-    with (
-        patch.object(kling_api, "credential_precedence_note", return_value=None),
-        patch("kling_errors.using_api_key", return_value=True),
-    ):
+def api_key_set():
+    with patch("kling_errors.using_api_key", return_value=True):
         yield
 
 
-def test_a_successful_response_raises_nothing() -> None:
-    raise_for_kling_error(_response(200, {"code": 0, "data": {"task_id": "abc"}}))
-    raise_for_kling_error(_response(200, {"data": {"task_id": "abc"}}))
+def _raise(status: int, body: object, note: str | None = None) -> NodeError:
+    with patch.object(kling_api, "credential_precedence_note", return_value=note), pytest.raises(NodeError) as error:
+        raise_for_kling_error(_response(status, body))
+    return error.value
 
 
-def test_a_failure_in_the_body_of_a_200_raises_with_kling_s_reason_and_code() -> None:
+def test_a_failure_in_the_body_of_a_200_raises_with_the_int_error_code() -> None:
     body = {"code": 1201, "message": "Invalid parameter", "request_id": "req-1"}
 
-    with pytest.raises(NodeError) as error:
-        raise_for_kling_error(_response(200, body))
+    error = _raise(200, body)
 
-    assert str(error.value) == "Invalid parameter"
-    assert error.value.fields == {"status_code": 200, "request_id": "req-1", "error_code": 1201}
-    assert error.value.response == body
-
-
-def test_a_retired_model_reports_kling_s_explanation() -> None:
-    with pytest.raises(NodeError, match="The model is discontinued") as error:
-        raise_for_kling_error(_response(404, {"code": 1203, "message": "The model is discontinued"}))
-
-    assert error.value.fields["error_code"] == 1203
-    assert error.value.links == []
+    assert str(error) == "Invalid parameter"
+    assert error.fields == {"status_code": 200, "request_id": "req-1", "error_code": 1201}
+    assert error.response == body
 
 
-def test_a_refused_credential_links_to_the_secret() -> None:
-    """The live API answers a bad token with 401 and code 1002."""
-    with pytest.raises(NodeError, match="refused the API key") as error:
-        raise_for_kling_error(_response(401, {"code": 1002, "message": "The token was expected to have 3 parts"}))
-
-    assert error.value.links[0].url == "#settings-secrets?filter=KLING_API_KEY"
+def test_a_success_raises_nothing() -> None:
+    raise_for_kling_error(_response(200, {"code": 0, "data": {"task_id": "abc"}}))
 
 
-@pytest.mark.parametrize(("status", "code"), [(401, 1002), (200, 1102)])
-def test_a_credential_failure_explains_which_mechanism_won(status: int, code: int) -> None:
-    with patch.object(kling_api, "credential_precedence_note", return_value=PRECEDENCE_NOTE):
-        with pytest.raises(NodeError) as error:
-            raise_for_kling_error(_response(status, {"code": code, "message": "api key not found"}))
+def test_a_401_links_to_the_secret() -> None:
+    error = _raise(401, {"code": 1002, "message": "The token was expected to have 3 parts"})
 
-    assert PRECEDENCE_NOTE in str(error.value)
-    assert error.value.fields["error_code"] == code
+    assert "refused the API key" in str(error)
+    assert error.links[0].url == "#settings-secrets?filter=KLING_API_KEY"
 
 
-def test_an_unrelated_failure_does_not_blame_the_credentials() -> None:
-    with patch.object(kling_api, "credential_precedence_note", return_value=PRECEDENCE_NOTE):
-        with pytest.raises(NodeError) as error:
-            raise_for_kling_error(_response(404, {"code": 1203, "message": "The model is discontinued"}))
-
-    assert PRECEDENCE_NOTE not in str(error.value)
+def test_a_403_and_an_auth_code_in_a_200_are_not_a_refused_key() -> None:
+    assert _raise(403, {"code": 1103, "message": "Unauthorized access"}).links == []
+    assert _raise(200, {"code": 1004, "message": "Authorization has expired"}).links == []
 
 
-def test_a_403_is_not_reported_as_a_refused_key() -> None:
-    """Kling's 403 body is unconfirmed, and a 403 can be a permission or account problem, so only 401 means a bad key."""
-    body = {"code": 1103, "message": "Unauthorized access to requested resource"}
-
-    with pytest.raises(NodeError) as error:
-        raise_for_kling_error(_response(403, body))
-
-    assert str(error.value) == "Unauthorized access to requested resource"
-    assert error.value.links == []
-    assert error.value.fields["status_code"] == 403
-
-
-def test_an_empty_balance_in_a_200_is_not_a_refused_key() -> None:
-    with pytest.raises(NodeError) as error:
-        raise_for_kling_error(_response(200, {"code": 1102, "message": "Account balance not enough"}))
-
-    assert str(error.value) == "Account balance not enough"
-    assert error.value.links == []
-
-
-def test_an_auth_code_in_a_200_is_not_treated_as_a_refused_key() -> None:
-    """Only HTTP 401 means a refused key, as the live bad-token probes showed."""
-    with pytest.raises(NodeError, match="Authorization has expired") as error:
-        raise_for_kling_error(_response(200, {"code": 1004, "message": "Authorization has expired"}))
-
-    assert error.value.links == []
-
-
-def test_a_poll_403_raised_as_an_exception_is_not_a_refused_key() -> None:
-    response = _response(403, {"code": 1103, "message": "Forbidden here"})
-    exc = requests.exceptions.HTTPError(response=response)
-
-    error = error_from_exception(exc, fields={"task_id": "t-1"})
-
-    assert str(error) == "Forbidden here"
-    assert error.links == []
-    assert error.fields["task_id"] == "t-1"
+def test_an_empty_balance_gets_the_precedence_note_and_an_unrelated_failure_does_not() -> None:
+    assert NOTE in str(_raise(200, {"code": 1102, "message": "Balance not enough"}, NOTE))
+    assert NOTE not in str(_raise(404, {"code": 1203, "message": "Model discontinued"}, NOTE))

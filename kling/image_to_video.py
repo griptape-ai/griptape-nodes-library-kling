@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact, VideoUrlArtifact
-from griptape_nodes.exe_types.core_types import NodeError, Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
@@ -14,7 +14,7 @@ from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
 from kling_api import raise_for_kling_error
-from kling_auth import get_auth_headers, validate_credentials
+from kling_auth import KlingCredentialCheck, get_auth_headers
 from kling_errors import (
     error_from_exception,
     task_failed_error,
@@ -33,7 +33,7 @@ from kling_models import (
 BASE_URL = "https://api.klingai.com/v1/videos/image2video"  # Global endpoint per latest docs
 
 
-class KlingAI_ImageToVideo(ControlNode):
+class KlingAI_ImageToVideo(KlingCredentialCheck, ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._output_file = ProjectFileParameter(node=self, name="output_file", default_filename="kling_video.mp4")
@@ -353,14 +353,6 @@ class KlingAI_ImageToVideo(ControlNode):
         image_input = self.get_parameter_value(param_name)
         return self._get_image_api_data_from_input(image_input)
 
-    def validate_before_node_run(self) -> list[Exception] | None:
-        """Report a missing Kling credential first and on its own, so the Settings link shows immediately."""
-        base_errors = super().validate_before_node_run()
-        credential_errors = validate_credentials()
-        if credential_errors:
-            return list(credential_errors)
-        return base_errors
-
     def validate_node(self) -> list[Exception] | None:
         errors: list[Exception] = []
 
@@ -381,35 +373,35 @@ class KlingAI_ImageToVideo(ControlNode):
         # Only validate if somehow invalid combinations slip through UI
         if model == "kling-v2-5-turbo":
             if mode != "pro":
-                errors.append(NodeError("kling-v2-5-turbo only supports pro mode"))
+                errors.append(ValueError("kling-v2-5-turbo only supports pro mode"))
             if duration not in [5, 10]:
-                errors.append(NodeError("kling-v2-5-turbo only supports durations 5 or 10 seconds"))
+                errors.append(ValueError("kling-v2-5-turbo only supports durations 5 or 10 seconds"))
         if model == "kling-v2-6":
             if mode != "pro":
-                errors.append(NodeError("kling-v2-6 only supports pro mode"))
+                errors.append(ValueError("kling-v2-6 only supports pro mode"))
             if duration not in [5, 10]:
-                errors.append(NodeError("kling-v2-6 only supports durations 5 or 10 seconds"))
+                errors.append(ValueError("kling-v2-6 only supports durations 5 or 10 seconds"))
 
         # kling-v3 constraints: duration 3-15s
         if model == "kling-v3":
             if not (3 <= duration <= 15):
-                errors.append(NodeError("kling-v3 only supports durations from 3 to 15 seconds"))
+                errors.append(ValueError("kling-v3 only supports durations from 3 to 15 seconds"))
 
         cfg_scale_val = self.get_parameter_value("cfg_scale")
         if not (0 <= cfg_scale_val <= 1):  # type: ignore[operator]
-            errors.append(NodeError("cfg_scale must be between 0.0 and 1.0."))
+            errors.append(ValueError("cfg_scale must be between 0.0 and 1.0."))
 
         dynamic_masks_val_str = self.get_parameter_value("dynamic_masks")
         if dynamic_masks_val_str and dynamic_masks_val_str.strip():
             try:
                 json.loads(dynamic_masks_val_str)
             except json.JSONDecodeError:
-                errors.append(NodeError("Dynamic Masks 'dynamic_masks' is not a valid JSON string."))
+                errors.append(ValueError("Dynamic Masks 'dynamic_masks' is not a valid JSON string."))
 
         # Enforce end-frame support rules per docs
         image_tail_val = self._get_image_api_data("image_tail")
         if not image_val and not image_tail_val:
-            errors.append(NodeError("At least one of 'image' or 'image_tail' must be provided."))
+            errors.append(ValueError("At least one of 'image' or 'image_tail' must be provided."))
         if image_tail_val:
             end_frame_supported = (
                 (model == "kling-v2-5-turbo" and mode == "pro" and duration in [5, 10])
@@ -418,7 +410,7 @@ class KlingAI_ImageToVideo(ControlNode):
             )
             if not end_frame_supported:
                 errors.append(
-                    NodeError(
+                    ValueError(
                         "image_tail is only supported on models kling-v2-5-turbo and kling-v2-6 (with mode=pro and duration 5 or 10), and kling-v3."
                     )
                 )
@@ -430,10 +422,6 @@ class KlingAI_ImageToVideo(ControlNode):
 
     def _process(self):
         # Validate before processing
-        credential_errors = validate_credentials()
-        if credential_errors:
-            raise credential_errors[0]
-
         validation_errors = self.validate_node()
         if validation_errors:
             raise validation_errors_to_raise(validation_errors)
@@ -460,7 +448,7 @@ class KlingAI_ImageToVideo(ControlNode):
             try:
                 dynamic_masks_payload = json.loads(dynamic_masks_str)
             except json.JSONDecodeError as e:
-                raise NodeError(f"'Dynamic Masks' is not valid JSON: {e}", fields={"parameter": "dynamic_masks"}) from e
+                raise ValueError(f"Invalid JSON in dynamic_masks: {e}") from e
 
         logger.info(
             f"DEBUG: Parameter values - model_name: {model_name}, duration: {duration}, cfg_scale: {cfg_scale}, mode: {mode}"
@@ -569,10 +557,7 @@ class KlingAI_ImageToVideo(ControlNode):
                 except requests.exceptions.RequestException as e:
                     logger.warning(f"Polling request failed (Attempt {attempt + 1}/{max_retries}): {e}")
                     if attempt == max_retries - 1:
-                        raise error_from_exception(
-                            e,
-                            fields={"task_id": task_id},
-                        ) from e
+                        raise error_from_exception(e, fields={"task_id": task_id}) from e
 
             if not video_url:
                 logger.error(
@@ -624,7 +609,7 @@ class KlingAI_ImageToVideo(ControlNode):
                         first_video_artifact = result_artifact
 
         if first_video_artifact is None:
-            raise NodeError("Kling returned no videos.")
+            raise RuntimeError("No videos were generated.")
 
         self.publish_update_to_parameter("video_url", first_video_artifact)
         for index in range(5):

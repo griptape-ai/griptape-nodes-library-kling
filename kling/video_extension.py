@@ -3,13 +3,13 @@ import time
 
 import requests
 from griptape.artifacts import UrlArtifact
-from griptape_nodes.exe_types.core_types import NodeError, Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.files.file import File
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from kling_api import raise_for_kling_error
-from kling_auth import get_auth_headers, validate_credentials
+from kling_auth import KlingCredentialCheck, get_auth_headers
 from kling_errors import (
     error_from_exception,
     task_failed_error,
@@ -30,7 +30,7 @@ class VideoUrlArtifact(UrlArtifact):
         super().__init__(value=url, name=name or self.__class__.__name__)
 
 
-class KlingAI_VideoExtension(ControlNode):
+class KlingAI_VideoExtension(KlingCredentialCheck, ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._output_file = ProjectFileParameter(node=self, name="output_file", default_filename="kling_video.mp4")
@@ -122,14 +122,6 @@ class KlingAI_VideoExtension(ControlNode):
             )
         )
 
-    def validate_before_node_run(self) -> list[Exception] | None:
-        """Report a missing Kling credential first and on its own, so the Settings link shows immediately."""
-        base_errors = super().validate_before_node_run()
-        credential_errors = validate_credentials()
-        if credential_errors:
-            return list(credential_errors)
-        return base_errors
-
     def validate_node(self) -> list[Exception] | None:
         """Validates the parameters."""
         errors: list[Exception] = []
@@ -137,21 +129,17 @@ class KlingAI_VideoExtension(ControlNode):
         # Check required video_id
         video_id = self.get_parameter_value("video_id")
         if not video_id or not video_id.strip():
-            errors.append(NodeError("Video ID is required for video extension."))
+            errors.append(ValueError("Video ID is required for video extension."))
 
         # Validate cfg_scale range
         cfg_scale = self.get_parameter_value("cfg_scale")
         if not (0.0 <= cfg_scale <= 1.0):
-            errors.append(NodeError("cfg_scale must be between 0.0 and 1.0."))
+            errors.append(ValueError("cfg_scale must be between 0.0 and 1.0."))
 
         return errors if errors else None
 
     def process(self) -> AsyncResult:
         # Validate before yielding
-        credential_errors = validate_credentials()
-        if credential_errors:
-            raise credential_errors[0]
-
         validation_errors = self.validate_node()
         if validation_errors:
             raise validation_errors_to_raise(validation_errors)
@@ -236,10 +224,7 @@ class KlingAI_VideoExtension(ControlNode):
                 except requests.exceptions.RequestException as e:
                     logger.warning(f"Polling request failed (Attempt {attempt + 1}/{max_retries}): {e}")
                     if attempt == max_retries - 1:
-                        raise error_from_exception(
-                            e,
-                            fields={"task_id": task_id},
-                        ) from e
+                        raise error_from_exception(e, fields={"task_id": task_id}) from e
 
             raise task_timeout_error("video extension", task_id=task_id)
 
