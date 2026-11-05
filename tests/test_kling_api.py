@@ -65,15 +65,14 @@ def test_a_refused_credential_links_to_the_secret() -> None:
     assert error.value.links[0].url == "#settings-secrets?filter=KLING_API_KEY"
 
 
-@pytest.mark.parametrize("code", [1002, 1102])
-def test_a_credential_failure_explains_which_mechanism_won(code: int) -> None:
+@pytest.mark.parametrize(("status", "code"), [(401, 1002), (200, 1102)])
+def test_a_credential_failure_explains_which_mechanism_won(status: int, code: int) -> None:
     with patch.object(kling_api, "credential_precedence_note", return_value=PRECEDENCE_NOTE):
         with pytest.raises(NodeError) as error:
-            raise_for_kling_error(_response(401, {"code": code, "message": "api key not found"}))
+            raise_for_kling_error(_response(status, {"code": code, "message": "api key not found"}))
 
     assert PRECEDENCE_NOTE in str(error.value)
     assert error.value.fields["error_code"] == code
-    assert error.value.links
 
 
 def test_an_unrelated_failure_does_not_blame_the_credentials() -> None:
@@ -85,7 +84,7 @@ def test_an_unrelated_failure_does_not_blame_the_credentials() -> None:
 
 
 def test_a_403_is_not_reported_as_a_refused_key() -> None:
-    """Kling's 403 body is unconfirmed, and a 403 can be a permission or account problem, so only 401 and 1000-1004 mean a bad key."""
+    """Kling's 403 body is unconfirmed, and a 403 can be a permission or account problem, so only 401 means a bad key."""
     body = {"code": 1103, "message": "Unauthorized access to requested resource"}
 
     with pytest.raises(NodeError) as error:
@@ -104,11 +103,12 @@ def test_an_empty_balance_in_a_200_is_not_a_refused_key() -> None:
     assert error.value.links == []
 
 
-def test_an_auth_code_in_a_200_is_a_refused_key() -> None:
+def test_an_auth_code_in_a_200_is_not_treated_as_a_refused_key() -> None:
+    """Only HTTP 401 means a refused key, as the live bad-token probes showed."""
     with pytest.raises(NodeError, match="Authorization has expired") as error:
         raise_for_kling_error(_response(200, {"code": 1004, "message": "Authorization has expired"}))
 
-    assert error.value.links[0].url == "#settings-secrets?filter=KLING_API_KEY"
+    assert error.value.links == []
 
 
 def test_a_poll_403_raised_as_an_exception_is_not_a_refused_key() -> None:
