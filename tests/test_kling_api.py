@@ -29,7 +29,10 @@ def _response(status_code: int, body: object) -> requests.Response:
 
 @pytest.fixture(autouse=True)
 def no_precedence_note():
-    with patch.object(kling_api, "credential_precedence_note", return_value=None):
+    with (
+        patch.object(kling_api, "credential_precedence_note", return_value=None),
+        patch("kling_errors.using_api_key", return_value=True),
+    ):
         yield
 
 

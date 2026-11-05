@@ -6,10 +6,9 @@ from typing import Any
 
 import requests
 from griptape_nodes.exe_types.core_types import NodeError
+from kling_auth import API_KEY_ENV_VAR, using_api_key
 
 PROVIDER = "Kling"
-API_KEY_NAME = "KLING_API_KEY"
-KLING_KEYS_URL = "https://app.klingai.com/global/dev/api-key"
 
 SUCCESS_CODE = 0
 HTTP_UNAUTHORIZED = 401
@@ -31,10 +30,14 @@ def response_failed(response: requests.Response) -> bool:
 
 
 def error_from_exception(exc: Exception, *, fields: dict[str, str | int] | None = None) -> NodeError:
-    """A refused key is a 401 only: Kling's 403 body is unconfirmed."""
+    """A refused key is a 401 with KLING_API_KEY set. Kling's 403 body is unconfirmed, and a pair has no key to update."""
     status = getattr(getattr(exc, "response", None), "status_code", None)
     return NodeError.from_request_exception(
-        exc, provider=PROVIDER, secret_name=API_KEY_NAME, key_refused=status == HTTP_UNAUTHORIZED, fields=fields
+        exc,
+        provider=PROVIDER,
+        secret_name=API_KEY_ENV_VAR,
+        key_refused=status == HTTP_UNAUTHORIZED and using_api_key(),
+        fields=fields,
     )
 
 
@@ -44,8 +47,8 @@ def error_from_response(response: requests.Response, *, precedence_note: str | N
     error = NodeError.from_http_response(
         response,
         provider=PROVIDER,
-        secret_name=API_KEY_NAME,
-        key_refused=response.status_code == HTTP_UNAUTHORIZED,
+        secret_name=API_KEY_ENV_VAR,
+        key_refused=response.status_code == HTTP_UNAUTHORIZED and using_api_key(),
         fields={"error_code": code} if code is not None else None,
     )
     if precedence_note and code in CREDENTIAL_SENSITIVE_CODES:

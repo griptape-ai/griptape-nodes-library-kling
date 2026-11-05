@@ -12,9 +12,9 @@ import time
 import jwt
 from griptape_nodes.exe_types.core_types import NodeError, NodeErrorLink
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from kling_errors import KLING_KEYS_URL
 
 SERVICE = "Kling"
+KLING_KEYS_URL = "https://app.klingai.com/global/dev/api-key"
 API_KEY_ENV_VAR = "KLING_API_KEY"
 ACCESS_KEY_ENV_VAR = "KLING_ACCESS_KEY"
 SECRET_KEY_ENV_VAR = "KLING_SECRET_KEY"  # noqa: S105
@@ -61,6 +61,11 @@ def validate_credentials() -> list[NodeError]:
     if _resolve_auth_token() is None:
         return [_credentials_error()]
     return []
+
+
+def using_api_key() -> bool:
+    """True when the token comes from KLING_API_KEY rather than the Access Key / Secret Key pair."""
+    return bool(_get_secret(API_KEY_ENV_VAR))
 
 
 def credential_precedence_note() -> str | None:

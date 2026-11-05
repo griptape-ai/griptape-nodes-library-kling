@@ -67,6 +67,14 @@ def api_key() -> Iterator[None]:
 
 
 @pytest.fixture
+def key_pair() -> Iterator[None]:
+    secrets = {"KLING_ACCESS_KEY": "access", "KLING_SECRET_KEY": "secret-key-example-padded-to-32-bytes"}
+    with patch.object(kling_auth, "GriptapeNodes") as griptape_nodes:
+        griptape_nodes.SecretsManager.return_value.get_secret.side_effect = lambda name, **_: secrets.get(name)
+        yield
+
+
+@pytest.fixture
 def no_key() -> Iterator[None]:
     with patch.object(kling_auth, "GriptapeNodes") as griptape_nodes:
         griptape_nodes.SecretsManager.return_value.get_secret.return_value = None
@@ -264,3 +272,34 @@ def test_every_module_loads_the_way_the_engine_loads_it(filename: str) -> None:
     )
     result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=False)  # noqa: S603
     assert result.returncode == 0, result.stderr
+
+
+REFUSED_BODY = {"code": 1002, "message": "Authorization is invalid", "request_id": "req-7"}
+
+
+@pytest.mark.usefixtures("api_key")
+def test_a_401_with_the_api_key_set_links_to_update_it(kling_api_server: Callable[[Route], Any]) -> None:
+    kling_api_server(lambda _request: (401, REFUSED_BODY))
+    node = KlingAI_TextToVideo(name="node")
+    node.set_parameter_value("prompt", "a cat")
+
+    with pytest.raises(NodeError, match="refused the API key. Update KLING_API_KEY") as error:
+        node._process()
+
+    assert error.value.links[0].url == "#settings-secrets?filter=KLING_API_KEY"
+
+
+@pytest.mark.usefixtures("key_pair")
+def test_a_401_with_only_the_key_pair_shows_kling_s_message_and_no_api_key_link(
+    kling_api_server: Callable[[Route], Any],
+) -> None:
+    kling_api_server(lambda _request: (401, REFUSED_BODY))
+    node = KlingAI_TextToVideo(name="node")
+    node.set_parameter_value("prompt", "a cat")
+
+    with pytest.raises(NodeError) as error:
+        node._process()
+
+    assert str(error.value) == "Authorization is invalid"
+    assert error.value.links == []
+    assert error.value.fields["status_code"] == 401

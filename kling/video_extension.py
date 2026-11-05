@@ -131,7 +131,7 @@ class KlingAI_VideoExtension(ControlNode):
         return base_errors
 
     def validate_node(self) -> list[Exception] | None:
-        """Validates that the Kling API keys are configured and parameters are valid."""
+        """Validates the parameters."""
         errors: list[Exception] = []
 
         # Check required video_id

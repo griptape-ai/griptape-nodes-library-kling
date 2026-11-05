@@ -271,7 +271,7 @@ class KlingAI_TextToVideo(ControlNode):
         return base_errors
 
     def validate_node(self) -> list[Exception] | None:
-        """Validates that the Kling API keys are configured and model constraints.
+        """Validates the model constraints.
         Returns:
             list[Exception] | None: List of exceptions if validation fails, None if validation passes.
         """
